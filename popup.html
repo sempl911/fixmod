@@ -11,6 +11,7 @@
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             margin: 0;
+            transition: background 0.3s ease;
         }
         
         h3 {
@@ -54,6 +55,23 @@
             box-shadow: 0 1px 3px rgba(0,0,0,0.3);
         }
         
+        select {
+            width: 100%;
+            padding: 8px;
+            margin-top: 5px;
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        
+        select option {
+            background: #2a2a3e;
+            color: white;
+        }
+        
         button {
             width: 100%;
             padding: 8px;
@@ -64,10 +82,45 @@
             border-radius: 6px;
             cursor: pointer;
             font-size: 12px;
+            transition: all 0.2s;
         }
         
         button:hover {
             background: rgba(255,255,255,0.3);
+        }
+        
+        .version-info {
+            text-align: center;
+            font-size: 10px;
+            opacity: 0.6;
+            margin-top: 15px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(255,255,255,0.2);
+        }
+        
+        .theme-preview {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+            flex-wrap: wrap;
+        }
+        
+        .theme-dot {
+            width: 30px;
+            height: 30px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.2s;
+            border: 2px solid transparent;
+        }
+        
+        .theme-dot:hover {
+            transform: scale(1.1);
+        }
+        
+        .theme-dot.active {
+            border-color: white;
+            transform: scale(1.05);
         }
     </style>
 </head>
@@ -82,7 +135,29 @@
         <input type="range" id="opacity-slider" min="30" max="100" value="85">
     </div>
     
+    <div class="setting">
+        <label>🎨 Color scheme</label>
+        <select id="theme-select">
+            <option value="default">🌙 Фиолетовый (по умолчанию)</option>
+            <option value="dark">🌑 Тёмно-синий</option>
+            <option value="green">🍃 Зелёный</option>
+            <option value="orange">🍊 Оранжевый</option>
+            <option value="blue">💙 Классический синий</option>
+            <option value="red">❤️ Красный</option>
+            <option value="teal">🩵 Бирюзовый</option>
+            <option value="gray1">⚙️ Светло-серый</option>
+            <option value="gray2">🔘 Тёмно-серый</option>
+            <option value="gray3">🌫️ Мокрый асфальт</option>
+            <option value="gray4">🪨 Графитовый</option>
+        </select>
+        <div class="theme-preview" id="theme-preview"></div>
+    </div>
+    
     <button id="reset-btn">Reset to 85%</button>
+    
+    <div class="version-info" id="version-info">
+        v1.0.0
+    </div>
     
     <script src="popup.js"></script>
 </body>

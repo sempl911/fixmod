@@ -132,7 +132,6 @@ if (!window.location.href.includes('evy.fixably.com')) {
         
         if (!qrImg || !qrContainer) return;
         
-        // Получаем ширину контейнера
         const containerWidth = qrContainer.clientWidth - 30;
         
         let qrSize;
@@ -143,11 +142,9 @@ if (!window.location.href.includes('evy.fixably.com')) {
             qrSize = 140;
         }
         
-        // Устанавливаем размеры изображения
         qrImg.style.width = qrSize + 'px';
         qrImg.style.height = qrSize + 'px';
         
-        // Перегенерируем QR код с новым размером
         const orderNumber = getOrderNumber();
         if (orderNumber && orderNumber !== 'N/A') {
             qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=${qrSize}x${qrSize}&data=${encodeURIComponent(orderNumber)}`;
@@ -177,7 +174,6 @@ if (!window.location.href.includes('evy.fixably.com')) {
         
         qrContainer.appendChild(qrImg);
         
-        // Запускаем ResizeObserver для отслеживания изменения размера контейнера
         if (resizeObserver) resizeObserver.disconnect();
         resizeObserver = new ResizeObserver(() => {
             if (resizeFrame) cancelAnimationFrame(resizeFrame);
@@ -188,7 +184,6 @@ if (!window.location.href.includes('evy.fixably.com')) {
         });
         resizeObserver.observe(qrContainer);
         
-        // Также следим за изменением размера окна
         window.addEventListener('resize', () => {
             if (resizeFrame) cancelAnimationFrame(resizeFrame);
             resizeFrame = requestAnimationFrame(() => {
@@ -197,7 +192,6 @@ if (!window.location.href.includes('evy.fixably.com')) {
             });
         });
         
-        // Первый вызов
         setTimeout(() => resizeQRCode(), 100);
     }
     
@@ -233,6 +227,46 @@ if (!window.location.href.includes('evy.fixably.com')) {
         console.log('SO:', orderNumber);
         console.log('INS:', offerTitle);
         console.log('IMEI:', imei);
+    }
+    
+    // Функция применения темы
+    function applyTheme(themeId, colors) {
+        const gradient = `linear-gradient(135deg, ${colors.c1} 0%, ${colors.c2} 100%)`;
+        
+        // Обновляем шапку основного окна
+        const header = document.querySelector('.window-header');
+        if (header) header.style.background = gradient;
+        
+        // Обновляем панель подсказок (если открыта)
+        const quickPanel = document.getElementById('quick-input-buttons');
+        if (quickPanel) quickPanel.style.background = gradient;
+        
+        // Сохраняем тему в localStorage
+        localStorage.setItem('widgetTheme', themeId);
+    }
+    
+    // Загрузка сохраненной темы
+    function loadSavedTheme() {
+        const savedTheme = localStorage.getItem('widgetTheme');
+        if (savedTheme) {
+            const colorSchemes = {
+                default: { c1: '#667eea', c2: '#764ba2' },
+                dark: { c1: '#1a1a2e', c2: '#16213e' },
+                green: { c1: '#11998e', c2: '#38ef7d' },
+                orange: { c1: '#f12711', c2: '#f5af19' },
+                blue: { c1: '#1e3c72', c2: '#2a5298' },
+                red: { c1: '#cb2d3e', c2: '#ef473a' },
+                teal: { c1: '#00b4db', c2: '#0083b0' },
+                gray1: { c1: '#ece9e6', c2: '#ffffff' },
+                gray2: { c1: '#4b4b4b', c2: '#2c2c2c' },
+                gray3: { c1: '#616161', c2: '#9e9e9e' },
+                gray4: { c1: '#3a3a3a', c2: '#1a1a1a' }
+            };
+            
+            if (colorSchemes[savedTheme]) {
+                applyTheme(savedTheme, colorSchemes[savedTheme]);
+            }
+        }
     }
     
     let windowDiv = null;
@@ -349,7 +383,7 @@ if (!window.location.href.includes('evy.fixably.com')) {
         isWidgetCreated = true;
         
         loadSavedPosition();
-        
+        loadSavedTheme();
         initQRCode(orderNumber);
         
         const copyableElements = windowDiv.querySelectorAll('.copyable');
@@ -430,7 +464,6 @@ if (!window.location.href.includes('evy.fixably.com')) {
             }
         });
         
-        // Изменение размера
         let isResizing = false;
         let startX, startY, startWidth, startHeight;
         let resizeFrameTimer = null;
@@ -458,7 +491,6 @@ if (!window.location.href.includes('evy.fixably.com')) {
             windowDiv.style.width = newWidth + 'px';
             windowDiv.style.height = newHeight + 'px';
             
-            // Обновляем QR код при ресайзе
             if (resizeFrameTimer) cancelAnimationFrame(resizeFrameTimer);
             resizeFrameTimer = requestAnimationFrame(() => {
                 resizeQRCode();
@@ -508,6 +540,18 @@ if (!window.location.href.includes('evy.fixably.com')) {
             chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 if (request.type === 'UPDATE_OPACITY') {
                     updateWindowOpacity(request.opacity);
+                    sendResponse({ success: true });
+                } else if (request.type === 'UPDATE_THEME') {
+                    const theme = request.colors;
+                    const gradient = `linear-gradient(135deg, ${theme.c1} 0%, ${theme.c2} 100%)`;
+                    
+                    const headerElem = document.querySelector('.window-header');
+                    if (headerElem) headerElem.style.background = gradient;
+                    
+                    const quickPanelElem = document.getElementById('quick-input-buttons');
+                    if (quickPanelElem) quickPanelElem.style.background = gradient;
+                    
+                    localStorage.setItem('widgetTheme', request.theme);
                     sendResponse({ success: true });
                 }
                 return true;
@@ -565,5 +609,5 @@ if (!window.location.href.includes('evy.fixably.com')) {
     observer.observe(document.body, { childList: true, subtree: true });
     
     window.refreshWidgetData = updateAllData;
-    console.log('Виджет Fixably загружен!');
+    console.log('Виджет Fixably загружен! Кликните на SO или IMEI для копирования');
 }

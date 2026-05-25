@@ -1,19 +1,19 @@
 {
   "diagnosis": [
-    { "text": "🔋 Battery issue", "value": "Battery drains quickly, needs replacement." },
-    { "text": "📱 Display issue", "value": "Display cracked, needs replacement." },
-    { "text": "📸 Camera issue", "value": "Camera not working, needs replacement." },
-    { "text": "🎤 Microphone issue", "value": "Microphone not working, needs replacement." },
-    { "text": "🔊 Speaker issue", "value": "Speaker distorted, needs replacement." },
-    { "text": "⚡ Charging port", "value": "Charging port loose, needs replacement." },
-    { "text": "📶 WiFi/Bluetooth", "value": "WiFi/Bluetooth connectivity issue." },
-    { "text": "💧 Water damage", "value": "Water damage detected, needs cleaning." },
-    { "text": "🔄 Software issue", "value": "Software glitch, factory reset performed." },
-    { "text": "📱 Motherboard issue", "value": "Motherboard failure, needs replacement." },
-    { "text": "🔌 Not charging", "value": "Device not charging, charging IC issue." },
-    { "text": "🔒 Locked device", "value": "Device is locked, needs unlock." },
-    { "text": "📱 No power", "value": "Device won't turn on, no signs of life." },
-    { "text": "🔋 Battery swollen", "value": "Battery swollen, needs immediate replacement." }
+    { "text": "🔋 Battery issue", "value": "Battery issue" },
+  { "text": "📱 Display issue", "value": "Display issue" },
+  { "text": "📸 Camera issue", "value": "Camera issue" },
+  { "text": "🎤 Microphone issue", "value": "Microphone issue" },
+  { "text": "🔊 Speaker issue", "value": "Speaker issue" },
+  { "text": "⚡ Charging port", "value": "Charging port issue" },
+  { "text": "📶 WiFi/Bluetooth", "value": "WiFi/Bluetooth issue" },
+  { "text": "💧 Water damage", "value": "Water damage" },
+  { "text": "🔄 Software issue", "value": "Software issue" },
+  { "text": "📱 Motherboard issue", "value": "Motherboard issue" },
+  { "text": "🔌 Not charging", "value": "Not charging" },
+  { "text": "🔒 Locked device", "value": "Locked device" },
+  { "text": "📱 No power", "value": "No power" },
+  { "text": "🔋 Battery swollen", "value": "Battery swollen" }
   ],
   "resolution": [
     { "text": "✅ Battery replaced", "value": "Battery replaced." },

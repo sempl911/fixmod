@@ -20,6 +20,27 @@ class QuickInputHelper {
         
         // Загружаем подсказки
         this.loadSuggestions();
+        
+        // Слушаем изменения темы
+        this.setupThemeListener();
+    }
+    
+    // Слушатель изменения темы
+    setupThemeListener() {
+        if (typeof chrome !== 'undefined' && chrome.runtime) {
+            chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+                if (request.type === 'UPDATE_THEME') {
+                    const theme = request.colors;
+                    const gradient = `linear-gradient(135deg, ${theme.c1} 0%, ${theme.c2} 100%)`;
+                    
+                    if (this.buttonsContainer) {
+                        this.buttonsContainer.style.background = gradient;
+                    }
+                    sendResponse({ success: true });
+                }
+                return true;
+            });
+        }
     }
     
     // Загрузка подсказок из JSON файла
@@ -35,12 +56,12 @@ class QuickInputHelper {
             console.error('Quick Input: Ошибка загрузки подсказок', error);
             this.phrases = {
                 diagnosis: [
-                    { text: "🔋 Battery issue", value: "Battery issue, needs replacement" },
-                    { text: "📱 Display issue", value: "Display issue, needs replacement" }
+                    { text: "🔋 Battery issue", value: "Battery issue" },
+                    { text: "📱 Display issue", value: "Display issue" }
                 ],
                 resolution: [
-                    { text: "✅ Battery replaced", value: "Battery replaced successfully" },
-                    { text: "✅ Display replaced", value: "Display replaced successfully" }
+                    { text: "✅ Battery replaced", value: "Battery replaced" },
+                    { text: "✅ Display replaced", value: "Display replaced" }
                 ]
             };
         }
@@ -72,6 +93,32 @@ class QuickInputHelper {
                 this.buttonsContainer.setAttribute('data-user-moved', 'true');
             }
         } catch(e) {}
+    }
+    
+    // Загрузка сохраненной темы
+    loadSavedTheme() {
+        const savedTheme = localStorage.getItem('widgetTheme');
+        if (savedTheme && this.buttonsContainer) {
+            const colorSchemes = {
+                default: { c1: '#667eea', c2: '#764ba2' },
+                dark: { c1: '#1a1a2e', c2: '#16213e' },
+                green: { c1: '#11998e', c2: '#38ef7d' },
+                orange: { c1: '#f12711', c2: '#f5af19' },
+                blue: { c1: '#1e3c72', c2: '#2a5298' },
+                red: { c1: '#cb2d3e', c2: '#ef473a' },
+                teal: { c1: '#00b4db', c2: '#0083b0' },
+                gray1: { c1: '#ece9e6', c2: '#ffffff' },
+                gray2: { c1: '#4b4b4b', c2: '#2c2c2c' },
+                gray3: { c1: '#616161', c2: '#9e9e9e' },
+                gray4: { c1: '#3a3a3a', c2: '#1a1a1a' }
+            };
+            
+            if (colorSchemes[savedTheme]) {
+                const theme = colorSchemes[savedTheme];
+                const gradient = `linear-gradient(135deg, ${theme.c1} 0%, ${theme.c2} 100%)`;
+                this.buttonsContainer.style.background = gradient;
+            }
+        }
     }
     
     createButtonsPanel() {
@@ -151,6 +198,7 @@ class QuickInputHelper {
         };
         
         this.loadSavedPosition();
+        this.loadSavedTheme();
         
         return this.buttonsContainer;
     }
@@ -322,7 +370,6 @@ class QuickInputHelper {
         }
     }
     
-    // Проверка, видна ли панель
     isPanelVisible() {
         return this.isVisible && this.buttonsContainer && this.buttonsContainer.style.display === 'block';
     }
@@ -331,25 +378,19 @@ class QuickInputHelper {
 // Создаем экземпляр
 const quickInput = new QuickInputHelper();
 
-// Глобальный обработчик кликов для закрытия панели только при клике на крестик или переключении типа
+// Глобальный обработчик кликов для закрытия панели
 document.addEventListener('click', (e) => {
-    // Если панель не видна - ничего не делаем
     if (!quickInput.isPanelVisible()) return;
     
-    // Если кликнули по кнопке закрытия панели
     if (e.target.id === 'close-quick-panel') return;
     
-    // Если кликнули по самой панели или её элементам
     if (quickInput.buttonsContainer && quickInput.buttonsContainer.contains(e.target)) return;
     
-    // Если кликнули по полю ввода (активному полю)
     if (quickInput.activeField && (quickInput.activeField === e.target || quickInput.activeField.contains(e.target))) return;
     
-    // Если кликнули по выпадающему списку типа заметки
     const noteTypeSelect = document.getElementById('note-type');
     if (noteTypeSelect && noteTypeSelect.contains(e.target)) return;
     
-    // В остальных случаях - скрываем панель
     quickInput.hide();
 });
 
@@ -382,8 +423,6 @@ function setupNoteTypeWatcher() {
             quickInput.show(noteField, selectedValue === '2' ? 'diagnosis' : 'resolution');
         }
     });
-    
-    // Убираем обработчик blur, который мешал - теперь используем глобальный клик
 }
 
 // Поддержка модального окна
@@ -421,4 +460,4 @@ const observer = new MutationObserver(() => {
 });
 observer.observe(document.body, { childList: true, subtree: true });
 
-console.log('Quick Input: Модуль загружен! Панель не исчезает при клике вне её');
+console.log('Quick Input: Модуль загружен! Панель меняет цвет вместе с темой');
