@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "FixablyExtention by Kystov Aleksey",
+  "version": "1.0",
+  "description": "Make use more comfortable for Fixably users",
+  "permissions": ["storage"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Настройки виджета"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://evy.fixably.com/*"],
+      "js": ["content.js", "quick-input.js", "device-photos.js"],
+      "css": ["styles.css"]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["suggestions.json"],
+      "matches": ["https://evy.fixably.com/*"]
+    }
+  ]
+}
