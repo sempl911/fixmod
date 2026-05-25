@@ -2,7 +2,7 @@
 <gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>
   <app appid='llcbjlfomlghclbohgoojfaapofjabdg'>
     <updatecheck 
-      codebase='https://github.com/ВАШ_АККАУНТ/ВАШ_РЕПО/releases/download/v1.0.1/fixably-widget.crx' 
-      version='1.0.1' />
+      codebase='https://github.com/sempl911/fixmod/releases/download/v1.0.0/fixmod.crx' 
+      version='1.0.0' />
   </app>
 </gupdate>

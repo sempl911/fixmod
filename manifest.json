@@ -1,9 +1,10 @@
 {
   "manifest_version": 3,
   "name": "FixablyExtention by Kystov Aleksey",
-  "version": "1.0",
+  "version": "1.0.0",
   "description": "Make use more comfortable for Fixably users",
   "permissions": ["storage"],
+  "update_url": "https://raw.githubusercontent.com/sempl911/fixmod/main/updates.xml",
   "action": {
     "default_popup": "popup.html",
     "default_title": "Настройки виджета"
