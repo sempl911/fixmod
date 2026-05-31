@@ -98,29 +98,59 @@
             border-top: 1px solid rgba(255,255,255,0.2);
         }
         
-        .theme-preview {
-            display: flex;
-            gap: 8px;
-            margin-top: 8px;
-            flex-wrap: wrap;
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 22px;
         }
         
-        .theme-dot {
-            width: 30px;
-            height: 30px;
-            border-radius: 8px;
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .toggle-slider {
+            position: absolute;
             cursor: pointer;
-            transition: transform 0.2s;
-            border: 2px solid transparent;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255,255,255,0.3);
+            transition: 0.3s;
+            border-radius: 22px;
         }
         
-        .theme-dot:hover {
-            transform: scale(1.1);
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 2px;
+            bottom: 2px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
         }
         
-        .theme-dot.active {
-            border-color: white;
-            transform: scale(1.05);
+        input:checked + .toggle-slider {
+            background-color: #4CAF50;
+        }
+        
+        input:checked + .toggle-slider:before {
+            transform: translateX(22px);
+        }
+        
+        .toggle-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .font-size-value {
+            font-weight: bold;
         }
     </style>
 </head>
@@ -132,7 +162,25 @@
             <span>🔘 Opacity</span>
             <span id="opacity-value">85%</span>
         </label>
-        <input type="range" id="opacity-slider" min="30" max="100" value="85">
+        <input type="range" id="opacity-slider" min="10" max="100" value="85">
+    </div>
+    
+    <div class="setting">
+        <label>
+            <span>🔤 Font size</span>
+            <span id="font-size-value" class="font-size-value">12px</span>
+        </label>
+        <input type="range" id="font-size-slider" min="10" max="18" value="12" step="1">
+    </div>
+    
+    <div class="setting">
+        <div class="toggle-row">
+            <span>📷 QR code</span>
+            <label class="toggle-switch">
+                <input type="checkbox" id="qr-toggle" checked>
+                <span class="toggle-slider"></span>
+            </label>
+        </div>
     </div>
     
     <div class="setting">
@@ -150,10 +198,9 @@
             <option value="gray3">🌫️ Мокрый асфальт</option>
             <option value="gray4">🪨 Графитовый</option>
         </select>
-        <div class="theme-preview" id="theme-preview"></div>
     </div>
     
-    <button id="reset-btn">Reset to 85%</button>
+    <button id="reset-btn">Reset opacity to 85%</button>
     
     <div class="version-info" id="version-info">
         v1.0.0

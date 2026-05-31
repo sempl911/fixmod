@@ -201,3 +201,19 @@
     border-radius: 0 0 12px 12px;
     flex-shrink: 0;
 }
+
+/* Шрифт для всего окна */
+#my-draggable-window {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Отдельно для QR контейнера */
+.qr-container {
+    font-family: monospace;
+}
+
+/* Для заголовка */
+#widget-header-title {
+    font-weight: 600;
+    font-size: 13px;
+}

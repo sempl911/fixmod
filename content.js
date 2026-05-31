@@ -43,6 +43,19 @@ if (!window.location.href.includes('evy.fixably.com')) {
         return 'N/A';
     }
     
+    function getDeviceName() {
+        const deviceLink = document.querySelector('#order-device-panel .panel-heading a, #order-device .panel-heading a');
+        if (deviceLink) {
+            let fullText = deviceLink.textContent || deviceLink.innerText;
+            fullText = fullText.trim().replace(/\s+/g, ' ').replace(/<i[^>]*>.*?<\/i>/g, '');
+            if (fullText.length > 16) {
+                return fullText.substring(0, 16) + '…';
+            }
+            return fullText || 'Fixably Widget';
+        }
+        return 'Fixably Widget';
+    }
+    
     function getIMEI() {
         const devicePanel = document.getElementById('order-device');
         if (devicePanel) {
@@ -74,7 +87,6 @@ if (!window.location.href.includes('evy.fixably.com')) {
         return 'N/A';
     }
     
-    // Функция копирования в буфер обмена
     function copyToClipboard(text, fieldName) {
         if (!text || text === 'N/A') {
             alert(`Нет данных для копирования (${fieldName})`);
@@ -119,28 +131,34 @@ if (!window.location.href.includes('evy.fixably.com')) {
     }
     
     // ============================================================
-    // === ФУНКЦИЯ QR КОДА (адаптивный размер) ===
+    // === QR КОД ===
     // ============================================================
     
+    let qrEnabled = true;
     let resizeFrame = null;
     let resizeObserver = null;
     
-    // Функция для обновления размера QR кода
     function resizeQRCode() {
         const qrImg = document.getElementById('qr-img');
         const qrContainer = document.querySelector('.qr-container');
         
         if (!qrImg || !qrContainer) return;
         
-        const containerWidth = qrContainer.clientWidth - 30;
-        
-        let qrSize;
-        if (containerWidth > 0) {
-            qrSize = Math.floor(containerWidth * 0.7);
-            qrSize = Math.max(100, Math.min(250, qrSize));
-        } else {
-            qrSize = 140;
+        if (!qrEnabled) {
+            qrContainer.style.display = 'none';
+            return;
         }
+        
+        if (windowDiv && windowDiv.offsetWidth < 220) {
+            qrContainer.style.display = 'none';
+            return;
+        }
+        
+        qrContainer.style.display = 'flex';
+        
+        const containerWidth = qrContainer.clientWidth - 20;
+        let qrSize = containerWidth > 0 ? Math.min(containerWidth, 140) : 100;
+        qrSize = Math.max(60, qrSize);
         
         qrImg.style.width = qrSize + 'px';
         qrImg.style.height = qrSize + 'px';
@@ -164,12 +182,14 @@ if (!window.location.href.includes('evy.fixably.com')) {
             display: block;
             margin: 0 auto;
             transition: all 0.2s ease;
+            max-width: 100%;
+            height: auto;
         `;
         
         if (orderNumber && orderNumber !== 'N/A') {
-            qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(orderNumber)}`;
-            qrImg.style.width = '140px';
-            qrImg.style.height = '140px';
+            qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(orderNumber)}`;
+            qrImg.style.width = '100px';
+            qrImg.style.height = '100px';
         }
         
         qrContainer.appendChild(qrImg);
@@ -199,27 +219,70 @@ if (!window.location.href.includes('evy.fixably.com')) {
         const orderNumber = getOrderNumber();
         const qrImg = document.getElementById('qr-img');
         
-        if (qrImg && orderNumber && orderNumber !== 'N/A') {
+        if (qrImg && orderNumber && orderNumber !== 'N/A' && qrEnabled) {
             let currentSize = qrImg.clientWidth;
-            if (currentSize <= 0) currentSize = 140;
+            if (currentSize <= 0) currentSize = 100;
             qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=${currentSize}x${currentSize}&data=${encodeURIComponent(orderNumber)}`;
         }
     }
-    // === КОНЕЦ ФУНКЦИИ QR КОДА ===
-    // ============================================================
+    
+    function setQREnabled(enabled) {
+        qrEnabled = enabled;
+        const qrContainer = document.querySelector('.qr-container');
+        if (qrContainer) {
+            qrContainer.style.display = enabled ? 'flex' : 'none';
+        }
+        localStorage.setItem('qrEnabled', enabled);
+    }
+    
+    function loadQRSetting() {
+        const saved = localStorage.getItem('qrEnabled');
+        if (saved !== null) {
+            qrEnabled = saved === 'true';
+        } else {
+            qrEnabled = true;
+        }
+        setQREnabled(qrEnabled);
+    }
+    
+    // === НАСТРОЙКИ ===
+    
+    let currentFontSize = 12;
+    
+    function applyFontSize(size) {
+        currentFontSize = size;
+        const infoValues = document.querySelectorAll('.info-value');
+        infoValues.forEach(el => {
+            el.style.fontSize = size + 'px';
+        });
+        localStorage.setItem('widgetFontSize', size);
+    }
+    
+    function loadSavedFontSize() {
+        const savedSize = localStorage.getItem('widgetFontSize');
+        if (savedSize) {
+            const size = parseInt(savedSize);
+            if (!isNaN(size)) {
+                applyFontSize(size);
+            }
+        }
+    }
     
     function updateAllData() {
         const orderNumber = getOrderNumber();
         const offerTitle = getOfferTitle();
         const imei = getIMEI();
+        const deviceName = getDeviceName();
         
         const soSpan = document.getElementById('order-number');
         const insSpan = document.getElementById('insurance-type');
         const imeiSpan = document.getElementById('imei');
+        const headerTitle = document.getElementById('widget-header-title');
         
         if (soSpan) soSpan.textContent = orderNumber;
         if (insSpan) insSpan.textContent = offerTitle;
         if (imeiSpan) imeiSpan.textContent = imei;
+        if (headerTitle) headerTitle.textContent = deviceName;
         
         updateQRCode();
         
@@ -229,45 +292,93 @@ if (!window.location.href.includes('evy.fixably.com')) {
         console.log('IMEI:', imei);
     }
     
-    // Функция применения темы
-    function applyTheme(themeId, colors) {
+    // === ТЕМЫ ===
+    
+    const colorSchemes = {
+        default: { c1: '#667eea', c2: '#764ba2' },
+        dark: { c1: '#1a1a2e', c2: '#16213e' },
+        green: { c1: '#11998e', c2: '#38ef7d' },
+        orange: { c1: '#f12711', c2: '#f5af19' },
+        blue: { c1: '#1e3c72', c2: '#2a5298' },
+        red: { c1: '#cb2d3e', c2: '#ef473a' },
+        teal: { c1: '#00b4db', c2: '#0083b0' },
+        gray1: { c1: '#ece9e6', c2: '#ffffff' },
+        gray2: { c1: '#4b4b4b', c2: '#2c2c2c' },
+        gray3: { c1: '#616161', c2: '#9e9e9e' },
+        gray4: { c1: '#3a3a3a', c2: '#1a1a1a' }
+    };
+    
+    function applyTheme(themeId) {
+        const colors = colorSchemes[themeId];
+        if (!colors) return;
         const gradient = `linear-gradient(135deg, ${colors.c1} 0%, ${colors.c2} 100%)`;
         
-        // Обновляем шапку основного окна
         const header = document.querySelector('.window-header');
         if (header) header.style.background = gradient;
         
-        // Обновляем панель подсказок (если открыта)
         const quickPanel = document.getElementById('quick-input-buttons');
         if (quickPanel) quickPanel.style.background = gradient;
         
-        // Сохраняем тему в localStorage
+        // Применяем тему к панели фото
+        const photoPanel = document.querySelector('#nav-photo-indicator .dropdown-menu');
+        if (photoPanel) photoPanel.style.background = gradient;
+        
+        // Применяем тему к popup при открытии
         localStorage.setItem('widgetTheme', themeId);
     }
     
-    // Загрузка сохраненной темы
     function loadSavedTheme() {
         const savedTheme = localStorage.getItem('widgetTheme');
-        if (savedTheme) {
-            const colorSchemes = {
-                default: { c1: '#667eea', c2: '#764ba2' },
-                dark: { c1: '#1a1a2e', c2: '#16213e' },
-                green: { c1: '#11998e', c2: '#38ef7d' },
-                orange: { c1: '#f12711', c2: '#f5af19' },
-                blue: { c1: '#1e3c72', c2: '#2a5298' },
-                red: { c1: '#cb2d3e', c2: '#ef473a' },
-                teal: { c1: '#00b4db', c2: '#0083b0' },
-                gray1: { c1: '#ece9e6', c2: '#ffffff' },
-                gray2: { c1: '#4b4b4b', c2: '#2c2c2c' },
-                gray3: { c1: '#616161', c2: '#9e9e9e' },
-                gray4: { c1: '#3a3a3a', c2: '#1a1a1a' }
-            };
-            
-            if (colorSchemes[savedTheme]) {
-                applyTheme(savedTheme, colorSchemes[savedTheme]);
-            }
+        if (savedTheme && colorSchemes[savedTheme]) {
+            applyTheme(savedTheme);
         }
     }
+    
+    // === ПРОЗРАЧНОСТЬ ===
+    
+    let currentOpacity = 0.85;
+    
+    function updateWindowOpacity(opacityValue) {
+        // Прозрачность только для фона окна
+        windowDiv.style.backgroundColor = `rgba(255, 255, 255, ${opacityValue})`;
+        
+        // Прозрачность для контейнера QR
+        const qrContainer = document.querySelector('.qr-container');
+        if (qrContainer) {
+            qrContainer.style.backgroundColor = `rgba(255, 255, 255, ${Math.min(1, opacityValue + 0.05)})`;
+        }
+        
+        // Прозрачность для фона полей информации (но текст остается четким)
+        const infoItems = document.querySelectorAll('.info-item');
+        infoItems.forEach(item => {
+            item.style.backgroundColor = `rgba(255, 255, 255, ${opacityValue})`;
+        });
+        
+        // Текст всегда остается четким - не меняем его opacity
+        const infoValues = document.querySelectorAll('.info-value');
+        infoValues.forEach(el => {
+            el.style.opacity = '1';
+            el.style.color = '#000';
+        });
+        
+        const infoLabels = document.querySelectorAll('.info-label');
+        infoLabels.forEach(el => {
+            el.style.opacity = '1';
+            el.style.color = '#333';
+        });
+    }
+    
+    function loadSavedOpacity() {
+        if (typeof chrome !== 'undefined' && chrome.storage) {
+            chrome.storage.sync.get(['widgetOpacity'], (result) => {
+                const savedOpacity = (result.widgetOpacity !== undefined ? result.widgetOpacity : 85) / 100;
+                currentOpacity = savedOpacity;
+                updateWindowOpacity(savedOpacity);
+            });
+        }
+    }
+    
+    // === СОЗДАНИЕ ВИДЖЕТА ===
     
     let windowDiv = null;
     let isWidgetCreated = false;
@@ -327,6 +438,7 @@ if (!window.location.href.includes('evy.fixably.com')) {
             windowDiv.classList.add('collapsed');
         } else {
             windowDiv.classList.remove('collapsed');
+            resizeQRCode();
         }
         if (!skipSave) {
             localStorage.setItem(STORAGE_KEYS.WIDGET_COLLAPSED, isCollapsed);
@@ -343,13 +455,14 @@ if (!window.location.href.includes('evy.fixably.com')) {
         const orderNumber = getOrderNumber();
         const offerTitle = getOfferTitle();
         const imei = getIMEI();
+        const deviceName = getDeviceName();
         
         windowDiv = document.createElement('div');
         windowDiv.id = 'my-draggable-window';
         windowDiv.innerHTML = `
             <div class="window-header">
                 <div class="header-left">
-                    <span>📱 Fixably Widget</span>
+                    <span id="widget-header-title">${deviceName}</span>
                 </div>
                 <div class="header-buttons">
                     <span class="collapse-btn" title="Свернуть/развернуть">−</span>
@@ -384,8 +497,27 @@ if (!window.location.href.includes('evy.fixably.com')) {
         
         loadSavedPosition();
         loadSavedTheme();
+        loadSavedFontSize();
+        loadQRSetting();
         initQRCode(orderNumber);
         
+        // Применяем жирность к данным (SO, INS, IMEI)
+        const infoValues = windowDiv.querySelectorAll('.info-value');
+        infoValues.forEach(el => {
+            el.style.fontWeight = 'bold';
+            el.style.color = '#000';
+            el.style.opacity = '1';
+        });
+        
+        // Метки делаем обычными
+        const infoLabels = windowDiv.querySelectorAll('.info-label');
+        infoLabels.forEach(el => {
+            el.style.fontWeight = 'normal';
+            el.style.color = '#333';
+            el.style.opacity = '1';
+        });
+        
+        // Копирование
         const copyableElements = windowDiv.querySelectorAll('.copyable');
         copyableElements.forEach(el => {
             el.style.cursor = 'pointer';
@@ -398,6 +530,7 @@ if (!window.location.href.includes('evy.fixably.com')) {
             });
         });
         
+        // --- Обработчики ---
         const header = windowDiv.querySelector('.window-header');
         const resizeHandle = windowDiv.querySelector('.resize-handle');
         const collapseBtn = windowDiv.querySelector('.collapse-btn');
@@ -485,8 +618,8 @@ if (!window.location.href.includes('evy.fixably.com')) {
             let newWidth = startWidth + (e.clientX - startX);
             let newHeight = startHeight + (e.clientY - startY);
             
-            newWidth = Math.max(200, newWidth);
-            newHeight = Math.max(280, newHeight);
+            newWidth = Math.max(180, newWidth);
+            newHeight = Math.max(150, newHeight);
             
             windowDiv.style.width = newWidth + 'px';
             windowDiv.style.height = newHeight + 'px';
@@ -510,48 +643,21 @@ if (!window.location.href.includes('evy.fixably.com')) {
             }
         });
         
-        let currentOpacity = 0.85;
-        
-        function updateWindowOpacity(opacityValue) {
-            windowDiv.style.backgroundColor = `rgba(255, 255, 255, ${opacityValue})`;
-            
-            const qrContainer = document.querySelector('.qr-container');
-            const infoItems = document.querySelectorAll('.info-item');
-            
-            if (qrContainer) {
-                qrContainer.style.backgroundColor = `rgba(255, 255, 255, ${Math.min(1, opacityValue + 0.05)})`;
-            }
-            infoItems.forEach(item => {
-                item.style.backgroundColor = `rgba(255, 255, 255, ${opacityValue})`;
-            });
-        }
-        
-        function loadSavedOpacity() {
-            if (typeof chrome !== 'undefined' && chrome.storage) {
-                chrome.storage.sync.get(['widgetOpacity'], (result) => {
-                    const savedOpacity = (result.widgetOpacity || 85) / 100;
-                    currentOpacity = savedOpacity;
-                    updateWindowOpacity(savedOpacity);
-                });
-            }
-        }
-        
+        // Сообщения от popup
         if (typeof chrome !== 'undefined' && chrome.runtime) {
             chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 if (request.type === 'UPDATE_OPACITY') {
                     updateWindowOpacity(request.opacity);
                     sendResponse({ success: true });
                 } else if (request.type === 'UPDATE_THEME') {
-                    const theme = request.colors;
-                    const gradient = `linear-gradient(135deg, ${theme.c1} 0%, ${theme.c2} 100%)`;
-                    
-                    const headerElem = document.querySelector('.window-header');
-                    if (headerElem) headerElem.style.background = gradient;
-                    
-                    const quickPanelElem = document.getElementById('quick-input-buttons');
-                    if (quickPanelElem) quickPanelElem.style.background = gradient;
-                    
-                    localStorage.setItem('widgetTheme', request.theme);
+                    applyTheme(request.theme);
+                    sendResponse({ success: true });
+                } else if (request.type === 'UPDATE_FONT_SIZE') {
+                    applyFontSize(request.fontSize);
+                    sendResponse({ success: true });
+                } else if (request.type === 'UPDATE_QR_ENABLED') {
+                    setQREnabled(request.enabled);
+                    resizeQRCode();
                     sendResponse({ success: true });
                 }
                 return true;
@@ -564,6 +670,7 @@ if (!window.location.href.includes('evy.fixably.com')) {
     
     createWidget();
     
+    // Ожидание IMEI
     function waitForIMEI() {
         let attempts = 0;
         const maxAttempts = 20;
@@ -586,9 +693,17 @@ if (!window.location.href.includes('evy.fixably.com')) {
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => {
             setTimeout(waitForIMEI, 1000);
+            setTimeout(() => {
+                const headerTitle = document.getElementById('widget-header-title');
+                if (headerTitle) headerTitle.textContent = getDeviceName();
+            }, 1500);
         });
     } else {
         setTimeout(waitForIMEI, 1000);
+        setTimeout(() => {
+            const headerTitle = document.getElementById('widget-header-title');
+            if (headerTitle) headerTitle.textContent = getDeviceName();
+        }, 1500);
     }
     
     let lastUrl = location.href;
@@ -609,5 +724,5 @@ if (!window.location.href.includes('evy.fixably.com')) {
     observer.observe(document.body, { childList: true, subtree: true });
     
     window.refreshWidgetData = updateAllData;
-    console.log('Виджет Fixably загружен! Кликните на SO или IMEI для копирования');
+    console.log('Виджет Fixably загружен!');
 }

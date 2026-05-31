@@ -95,6 +95,39 @@
         }
     }
     
+    // Цветовые схемы
+    const colorSchemes = {
+        default: { c1: '#667eea', c2: '#764ba2' },
+        dark: { c1: '#1a1a2e', c2: '#16213e' },
+        green: { c1: '#11998e', c2: '#38ef7d' },
+        orange: { c1: '#f12711', c2: '#f5af19' },
+        blue: { c1: '#1e3c72', c2: '#2a5298' },
+        red: { c1: '#cb2d3e', c2: '#ef473a' },
+        teal: { c1: '#00b4db', c2: '#0083b0' },
+        gray1: { c1: '#ece9e6', c2: '#ffffff' },
+        gray2: { c1: '#4b4b4b', c2: '#2c2c2c' },
+        gray3: { c1: '#616161', c2: '#9e9e9e' },
+        gray4: { c1: '#3a3a3a', c2: '#1a1a1a' }
+    };
+    
+    // Функция применения темы к панели
+    let currentPreviewPanel = null;
+    
+    function applyThemeToPhotoPanel(themeId) {
+        if (!currentPreviewPanel) return;
+        const colors = colorSchemes[themeId];
+        if (!colors) return;
+        const gradient = `linear-gradient(135deg, ${colors.c1} 0%, ${colors.c2} 100%)`;
+        currentPreviewPanel.style.background = gradient;
+    }
+    
+    function loadSavedThemeForPhotos() {
+        const savedTheme = localStorage.getItem('widgetTheme');
+        if (savedTheme && colorSchemes[savedTheme]) {
+            applyThemeToPhotoPanel(savedTheme);
+        }
+    }
+    
     // Функция обновления панели превью
     function updatePreviewPanel(previewPanel, thumbContainer) {
         const result = countPhotos();
@@ -226,6 +259,9 @@
             max-width: 400px;
         `;
         
+        // Сохраняем ссылку на панель для применения темы
+        currentPreviewPanel = previewPanel;
+        
         const panelHeader = document.createElement('div');
         panelHeader.style.cssText = `
             color: white;
@@ -259,6 +295,9 @@
         indicatorContainer.appendChild(previewPanel);
         
         navbarUpper.insertBefore(indicatorContainer, navbarRight);
+        
+        // Загружаем сохраненную тему
+        loadSavedThemeForPhotos();
         
         let isOpen = false;
         let updateInterval = null;
@@ -361,5 +400,16 @@
     setTimeout(() => {
         observer.observe(document.body, { childList: true, subtree: true });
     }, 3000);
+    
+    // Слушаем сообщения об изменении темы
+    if (typeof chrome !== 'undefined' && chrome.runtime) {
+        chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+            if (request.type === 'UPDATE_THEME') {
+                applyThemeToPhotoPanel(request.theme);
+                sendResponse({ success: true });
+            }
+            return true;
+        });
+    }
     
 })();
