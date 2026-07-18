@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "FixablyExtention by Kustov Aleksey",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "description": "Make use more comfortable for Fixably users",
   "permissions": ["storage", "activeTab"],
   "host_permissions": [
