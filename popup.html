@@ -152,6 +152,25 @@
         .font-size-value {
             font-weight: bold;
         }
+
+        .dashboard-link {
+            display: block;
+            text-align: center;
+            margin-top: 10px;
+            color: white;
+            text-decoration: none;
+            font-size: 12px;
+            opacity: 0.8;
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 6px;
+            padding: 8px;
+            transition: all 0.2s;
+        }
+        
+        .dashboard-link:hover {
+            opacity: 1;
+            background: rgba(255,255,255,0.1);
+        }
     </style>
 </head>
 <body>
@@ -201,6 +220,10 @@
     </div>
     
     <button id="reset-btn">Reset opacity to 85%</button>
+    
+    <a href="https://rev-photographers-stranger-chest.trycloudflare.com/fixably/dashboard" target="_blank" class="dashboard-link">
+    📊 Open Dashboard
+</a>
     
     <div class="version-info" id="version-info">
         v1.0.0

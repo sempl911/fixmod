@@ -3,7 +3,11 @@
   "name": "FixablyExtention by Kustov Aleksey",
   "version": "1.0.0",
   "description": "Make use more comfortable for Fixably users",
-  "permissions": ["storage"],
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": [
+    "https://rev-photographers-stranger-chest.trycloudflare.com/*",
+    "https://evy.fixably.com/*"
+],
   "update_url": "https://raw.githubusercontent.com/sempl911/fixmod/main/updates.xml",
   "icons": {
     "16": "fixIco/fixModIco_16.png",
@@ -16,6 +20,9 @@
   "action": {
     "default_popup": "popup.html",
     "default_title": "Настройки виджета"
+  },
+  "background": {
+    "service_worker": "background.js"
   },
   "content_scripts": [
     {
