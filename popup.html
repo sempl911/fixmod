@@ -2,11 +2,16 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Настройки виджета</title>
+    <title>FixMod Settings</title>
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
         body {
-            width: 280px;
-            padding: 15px;
+            width: 320px;
+            padding: 16px;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
@@ -14,25 +19,73 @@
             transition: background 0.3s ease;
         }
         
-        h3 {
-            margin: 0 0 15px 0;
-            font-size: 16px;
-            text-align: center;
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
         }
+        h3 {
+            margin: 0;
+            font-size: 16px;
+        }
+        
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            opacity: 0.8;
+        }
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            flex-shrink: 0;
+        }
+        .status-dot.online { background: #34c759; }
+        .status-dot.offline { background: #ff9500; }
+        .status-dot.error { background: #ff3b30; }
+        .status-dot.unknown { background: #86868b; }
         
         .setting {
-            margin-bottom: 15px;
+            margin-bottom: 12px;
         }
-        
-        label {
+        .setting label {
+            display: block;
+            font-size: 12px;
+            opacity: 0.8;
+            margin-bottom: 4px;
+        }
+        .setting label.row-label {
             display: flex;
             justify-content: space-between;
             margin-bottom: 8px;
             font-size: 14px;
             opacity: 0.9;
         }
+        .setting input[type="text"] {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 8px;
+            background: rgba(255,255,255,0.1);
+            color: white;
+            font-size: 12px;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+        .setting input[type="text"]:focus {
+            outline: none;
+            border-color: rgba(255,255,255,0.5);
+            background: rgba(255,255,255,0.15);
+        }
+        .setting input[type="text"]::placeholder {
+            color: rgba(255,255,255,0.4);
+        }
         
-        input[type="range"] {
+        .setting input[type="range"] {
             width: 100%;
             cursor: pointer;
             background: rgba(255,255,255,0.2);
@@ -40,12 +93,10 @@
             border-radius: 5px;
             -webkit-appearance: none;
         }
-        
-        input[type="range"]:focus {
+        .setting input[type="range"]:focus {
             outline: none;
         }
-        
-        input[type="range"]::-webkit-slider-thumb {
+        .setting input[type="range"]::-webkit-slider-thumb {
             -webkit-appearance: none;
             width: 16px;
             height: 16px;
@@ -55,47 +106,67 @@
             box-shadow: 0 1px 3px rgba(0,0,0,0.3);
         }
         
+        .btn {
+            width: 100%;
+            padding: 8px;
+            margin-top: 4px;
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 8px;
+            background: rgba(255,255,255,0.1);
+            color: white;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+        .btn:hover {
+            background: rgba(255,255,255,0.2);
+        }
+        .btn-primary {
+            background: rgba(255,255,255,0.2);
+        }
+        .btn-primary:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        .btn-success {
+            background: rgba(52, 199, 89, 0.3);
+            border-color: rgba(52, 199, 89, 0.4);
+        }
+        .btn-success:hover {
+            background: rgba(52, 199, 89, 0.4);
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .save-hint {
+            font-size: 10px;
+            opacity: 0.4;
+            margin-top: 2px;
+            text-align: right;
+        }
+        
         select {
             width: 100%;
             padding: 8px;
             margin-top: 5px;
-            background: rgba(255,255,255,0.2);
-            border: 1px solid rgba(255,255,255,0.3);
+            background: rgba(255,255,255,0.15);
+            border: 1px solid rgba(255,255,255,0.2);
             color: white;
-            border-radius: 6px;
+            border-radius: 8px;
             cursor: pointer;
             font-size: 12px;
+            font-family: inherit;
+            transition: all 0.2s;
         }
-        
+        select:focus {
+            outline: none;
+            border-color: rgba(255,255,255,0.5);
+        }
         select option {
             background: #2a2a3e;
             color: white;
-        }
-        
-        button {
-            width: 100%;
-            padding: 8px;
-            margin-top: 10px;
-            background: rgba(255,255,255,0.2);
-            border: 1px solid rgba(255,255,255,0.3);
-            color: white;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 12px;
-            transition: all 0.2s;
-        }
-        
-        button:hover {
-            background: rgba(255,255,255,0.3);
-        }
-        
-        .version-info {
-            text-align: center;
-            font-size: 10px;
-            opacity: 0.6;
-            margin-top: 15px;
-            padding-top: 10px;
-            border-top: 1px solid rgba(255,255,255,0.2);
         }
         
         .toggle-switch {
@@ -103,14 +174,13 @@
             display: inline-block;
             width: 44px;
             height: 22px;
+            flex-shrink: 0;
         }
-        
         .toggle-switch input {
             opacity: 0;
             width: 0;
             height: 0;
         }
-        
         .toggle-slider {
             position: absolute;
             cursor: pointer;
@@ -122,7 +192,6 @@
             transition: 0.3s;
             border-radius: 22px;
         }
-        
         .toggle-slider:before {
             position: absolute;
             content: "";
@@ -134,11 +203,9 @@
             transition: 0.3s;
             border-radius: 50%;
         }
-        
         input:checked + .toggle-slider {
             background-color: #4CAF50;
         }
-        
         input:checked + .toggle-slider:before {
             transform: translateX(22px);
         }
@@ -152,7 +219,17 @@
         .font-size-value {
             font-weight: bold;
         }
-
+        
+        .offline-count {
+            text-align: center;
+            font-size: 11px;
+            opacity: 0.6;
+            margin-top: 8px;
+            padding: 6px;
+            border-radius: 6px;
+            background: rgba(255,255,255,0.05);
+        }
+        
         .dashboard-link {
             display: block;
             text-align: center;
@@ -162,36 +239,69 @@
             font-size: 12px;
             opacity: 0.8;
             border: 1px solid rgba(255,255,255,0.2);
-            border-radius: 6px;
+            border-radius: 8px;
             padding: 8px;
             transition: all 0.2s;
         }
-        
         .dashboard-link:hover {
             opacity: 1;
             background: rgba(255,255,255,0.1);
         }
+        
+        .version-info {
+            text-align: center;
+            font-size: 10px;
+            opacity: 0.4;
+            margin-top: 12px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .divider {
+            border: none;
+            border-top: 1px solid rgba(255,255,255,0.08);
+            margin: 12px 0;
+        }
     </style>
 </head>
 <body>
-    <h3>⚙️ FixMod settings</h3>
-    
+    <div class="header">
+        <h3>⚙️ FixMod</h3>
+        <div class="status-indicator">
+            <span id="statusLabel">Checking...</span>
+            <span class="status-dot unknown" id="statusDot"></span>
+        </div>
+    </div>
+
+    <!-- URL настройки -->
     <div class="setting">
-        <label>
+        <label>🔗 Server URL</label>
+        <input type="text" id="apiUrl" placeholder="http://server:8000/api/fixably/order">
+        <div class="save-hint">Click Save to apply</div>
+    </div>
+    <button class="btn btn-primary" id="saveUrlBtn">💾 Save URL</button>
+
+    <hr class="divider">
+
+    <!-- Прозрачность -->
+    <div class="setting">
+        <label class="row-label">
             <span>🔘 Opacity</span>
             <span id="opacity-value">85%</span>
         </label>
         <input type="range" id="opacity-slider" min="10" max="100" value="85">
     </div>
-    
+
+    <!-- Размер шрифта -->
     <div class="setting">
-        <label>
+        <label class="row-label">
             <span>🔤 Font size</span>
             <span id="font-size-value" class="font-size-value">12px</span>
         </label>
         <input type="range" id="font-size-slider" min="10" max="18" value="12" step="1">
     </div>
-    
+
+    <!-- QR код -->
     <div class="setting">
         <div class="toggle-row">
             <span>📷 QR code</span>
@@ -201,34 +311,45 @@
             </label>
         </div>
     </div>
-    
+
+    <!-- Цветовая схема -->
     <div class="setting">
         <label>🎨 Color scheme</label>
         <select id="theme-select">
-            <option value="default">🌙 Фиолетовый (по умолчанию)</option>
-            <option value="dark">🌑 Тёмно-синий</option>
-            <option value="green">🍃 Зелёный</option>
-            <option value="orange">🍊 Оранжевый</option>
-            <option value="blue">💙 Классический синий</option>
-            <option value="red">❤️ Красный</option>
-            <option value="teal">🩵 Бирюзовый</option>
-            <option value="gray1">⚙️ Светло-серый</option>
-            <option value="gray2">🔘 Тёмно-серый</option>
-            <option value="gray3">🌫️ Мокрый асфальт</option>
-            <option value="gray4">🪨 Графитовый</option>
+            <option value="default">🌙 Purple (Default)</option>
+            <option value="dark">🌑 Dark Blue</option>
+            <option value="green">🍃 Green</option>
+            <option value="orange">🍊 Orange</option>
+            <option value="blue">💙 Classic Blue</option>
+            <option value="red">❤️ Red</option>
+            <option value="teal">🩵 Teal</option>
+            <option value="gray1">⚙️ Light Gray</option>
+            <option value="gray2">🔘 Dark Gray</option>
+            <option value="gray3">🌫️ Wet Asphalt</option>
+            <option value="gray4">🪨 Graphite</option>
         </select>
     </div>
-    
+
+    <!-- Сброс -->
     <button id="reset-btn">Reset opacity to 85%</button>
-    
-    <a href="https://rev-photographers-stranger-chest.trycloudflare.com/fixably/dashboard" target="_blank" class="dashboard-link">
-    📊 Open Dashboard
-</a>
-    
+
+    <hr class="divider">
+
+    <!-- Синхронизация -->
+    <button class="btn btn-success" id="syncBtn">🔄 Sync Offline Orders</button>
+    <div class="offline-count" id="offlineCount">📶 Offline orders: 0</div>
+
+    <hr class="divider">
+
+    <!-- Ссылка на дашборд -->
+    <a href="http://167.99.138.93:8000/fixably/dashboard" target="_blank" class="dashboard-link">
+        📊 Open Dashboard
+    </a>
+
     <div class="version-info" id="version-info">
-        v1.0.0
+        FixMod v1.0.4
     </div>
-    
+
     <script src="popup.js"></script>
 </body>
 </html>

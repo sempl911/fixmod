@@ -231,6 +231,46 @@
 }
 
 /* ============================================================
+   === СТАТУС СОЕДИНЕНИЯ В ВИДЖЕТЕ ===
+   ============================================================ */
+
+.status-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    opacity: 0.8;
+    margin-left: 8px;
+}
+
+.status-indicator .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+}
+
+.status-indicator .dot.online {
+    background: #34c759;
+    box-shadow: 0 0 8px rgba(52, 199, 89, 0.4);
+}
+
+.status-indicator .dot.offline {
+    background: #ff9500;
+    box-shadow: 0 0 8px rgba(255, 149, 0, 0.4);
+}
+
+.status-indicator .dot.error {
+    background: #ff3b30;
+    box-shadow: 0 0 8px rgba(255, 59, 48, 0.4);
+}
+
+.status-indicator .dot.unknown {
+    background: #86868b;
+}
+
+/* ============================================================
    === УВЕДОМЛЕНИЯ ОТ ПРИЛОЖЕНИЯ ===
    ============================================================ */
 
@@ -274,6 +314,10 @@
     background: rgba(0, 122, 255, 0.95);
 }
 
+.fixably-notification.warning {
+    background: rgba(255, 149, 0, 0.95);
+}
+
 .fixably-notification.fade-out {
     animation: fixablyFadeOut 0.3s ease forwards;
 }
@@ -302,6 +346,29 @@
 }
 
 /* ============================================================
+   === БЕЙДЖ ОФЛАЙН-ЗАКАЗОВ НА ИКОНКЕ ===
+   ============================================================ */
+
+/* Стиль для бейджа на иконке расширения добавляется через chrome.action API */
+/* Но можем добавить визуальный индикатор в самом виджете */
+
+.offline-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #ff9500;
+    color: white;
+    font-size: 9px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-left: 6px;
+    min-width: 18px;
+    height: 18px;
+    line-height: 1;
+}
+
+/* ============================================================
    === АДАПТИВНОСТЬ ===
    ============================================================ */
 
@@ -327,5 +394,9 @@
     .fixably-notification {
         font-size: 12px;
         padding: 12px 16px;
+    }
+    
+    .status-indicator {
+        font-size: 10px;
     }
 }

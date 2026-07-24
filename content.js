@@ -1,6 +1,10 @@
-// content.js - Fixably Widget + Server Integration
+// content.js - Fixably Widget + Server Integration with Offline Support
 
-const API_URL = 'https://rev-photographers-stranger-chest.trycloudflare.com/api/fixably/order';
+// ============================================================
+// === НАСТРОЙКИ ===
+// ============================================================
+
+// API URL теперь хранится в background, используем отправку через сообщения
 
 // ============================================================
 // === ХРАНЕНИЕ СОСТОЯНИЯ ДЛЯ ОТСЛЕЖИВАНИЯ ИЗМЕНЕНИЙ ===
@@ -135,7 +139,7 @@ function getCustomer() {
 }
 
 // ============================================================
-// === СБОР И ОТПРАВКА ДАННЫХ ===
+// === СБОР ДАННЫХ ===
 // ============================================================
 
 function collectOrderData() {
@@ -153,50 +157,42 @@ function collectOrderData() {
         raw_data: {}
     };
 
-    // Номер заказа
     const orderNumber = getOrderNumber();
     if (orderNumber && orderNumber !== 'N/A') {
         data.order_number = orderNumber;
     }
 
-    // Статус
     const status = getCurrentStatus();
     if (status) {
         data.status = status;
         data.status_code = getStatusCode(status);
     }
 
-    // Техник
     const technician = getCurrentTechnician();
     if (technician) {
         data.technician = technician;
     }
 
-    // Клиент
     const customer = getCustomer();
     if (customer) {
         data.customer = customer;
     }
 
-    // Модель устройства
     const deviceName = getDeviceName();
     if (deviceName && deviceName !== 'Fixably Widget') {
         data.device_model = deviceName;
     }
 
-    // IMEI
     const imei = getIMEI();
     if (imei && imei !== 'N/A') {
         data.imei = imei;
     }
 
-    // Дополнительные данные
     const offerTitle = getOfferTitle();
     if (offerTitle && offerTitle !== 'N/A') {
         data.notes = `Offer: ${offerTitle}`;
     }
 
-    // Сырые данные
     data.raw_data = {
         url: window.location.href,
         title: document.title,
@@ -228,38 +224,32 @@ function hasImeiChanged() {
 }
 
 function shouldSendData(currentData) {
-    // 1. Проверяем наличие техника
     if (!hasTechnician()) {
         console.log('ℹ️ No technician assigned, skipping send');
         return false;
     }
 
-    // 2. Проверяем номер заказа
     if (!currentData.order_number || currentData.order_number === 'N/A') {
         console.log('ℹ️ No order number, skipping send');
         return false;
     }
 
-    // 3. Если это первая загрузка - отправляем
     if (isFirstLoad) {
         console.log('📦 First load, sending initial data');
         isFirstLoad = false;
         return true;
     }
 
-    // 4. Проверяем изменился ли статус
     if (hasStatusChanged()) {
         console.log('🔄 Status changed, sending update');
         return true;
     }
 
-    // 5. Проверяем изменился ли техник
     if (hasTechnicianChanged()) {
         console.log('🔄 Technician changed, sending update');
         return true;
     }
 
-    // 6. Проверяем изменился ли IMEI
     if (hasImeiChanged()) {
         console.log('🔄 IMEI changed, sending update');
         return true;
@@ -269,14 +259,24 @@ function shouldSendData(currentData) {
     return false;
 }
 
+// ============================================================
+// === УВЕДОМЛЕНИЯ ===
+// ============================================================
+
 function showNotification(message, type = 'success') {
+    const colors = {
+        success: '#34c759',
+        warning: '#ff9500',
+        error: '#ff3b30',
+        info: '#007aff'
+    };
+    
     const notification = document.createElement('div');
-    const isSuccess = type === 'success';
     notification.style.cssText = `
         position: fixed;
         bottom: 20px;
         right: 20px;
-        background: ${isSuccess ? '#34c759' : '#ff3b30'};
+        background: ${colors[type] || '#34c759'};
         color: white;
         padding: 12px 20px;
         border-radius: 10px;
@@ -287,6 +287,7 @@ function showNotification(message, type = 'success') {
         box-shadow: 0 4px 16px rgba(0,0,0,0.15);
         animation: slideInRight 0.3s ease;
         max-width: 350px;
+        pointer-events: none;
     `;
     notification.textContent = message;
     document.body.appendChild(notification);
@@ -313,6 +314,10 @@ function showNotification(message, type = 'success') {
     }, 3000);
 }
 
+// ============================================================
+// === ОТПРАВКА НА СЕРВЕР (через background с офлайн-поддержкой) ===
+// ============================================================
+
 async function sendOrderToServer() {
     const currentData = collectOrderData();
     
@@ -321,36 +326,37 @@ async function sendOrderToServer() {
     }
 
     try {
-        const response = await fetch(API_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(currentData)
+        // Отправляем через background (там уже есть офлайн-логика)
+        const response = await chrome.runtime.sendMessage({
+            type: 'SEND_ORDER',
+            data: currentData
         });
-
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const result = await response.json();
-        console.log('✅ Order saved to server:', result);
         
-        // Обновляем состояние
-        lastOrderData = currentData;
-        lastStatus = getCurrentStatus();
-        lastTechnician = getCurrentTechnician();
-        lastImei = getIMEI();
-        lastStatusCode = getStatusCode(lastStatus);
-        
-        // Показываем уведомление
-        if (result.status_changed) {
-            showNotification(`Status: ${result.previous_status || ''} → ${result.new_status || ''}`, 'success');
+        if (response && response.success) {
+            console.log('✅ Order saved to server:', response.data);
+            
+            // Обновляем состояние
+            lastOrderData = currentData;
+            lastStatus = getCurrentStatus();
+            lastTechnician = getCurrentTechnician();
+            lastImei = getIMEI();
+            lastStatusCode = getStatusCode(lastStatus);
+            
+            if (response.data && response.data.status_changed) {
+                showNotification(`Status: ${response.data.previous_status || ''} → ${response.data.new_status || ''}`, 'success');
+            } else {
+                showNotification(`Order ${currentData.order_number} saved ✅`, 'success');
+            }
+            
+            return response.data;
         } else {
-            showNotification(`Order ${currentData.order_number} ${result.status || 'saved'}`, 'success');
+            // Ошибка или сохранено офлайн
+            const errorMsg = response?.error || 'Unknown error';
+            console.warn('⚠️ Order saved offline or error:', errorMsg);
+            showNotification(`Order ${currentData.order_number} saved offline 📶`, 'warning');
+            return null;
         }
         
-        return result;
     } catch (error) {
         console.error('❌ Error saving order:', error);
         showNotification('Error saving order', 'error');
@@ -359,10 +365,9 @@ async function sendOrderToServer() {
 }
 
 // ============================================================
-// === ВАШ СУЩЕСТВУЮЩИЙ КОД ВИДЖЕТА (СОКРАЩЕННАЯ ВЕРСИЯ) ===
+// === ВАШ СУЩЕСТВУЮЩИЙ КОД ВИДЖЕТА ===
 // ============================================================
 
-// Дополнительная проверка, что мы на нужном сайте
 if (!window.location.href.includes('evy.fixably.com')) {
     console.log('Расширение активно только на evy.fixably.com');
 } else {
@@ -572,7 +577,6 @@ if (!window.location.href.includes('evy.fixably.com')) {
         console.log('INS:', offerTitle);
         console.log('IMEI:', imei);
         
-        // === ОТПРАВКА НА СЕРВЕР ===
         sendOrderToServer();
     }
     
@@ -921,7 +925,6 @@ if (!window.location.href.includes('evy.fixably.com')) {
         loadSavedOpacity();
         window.addEventListener('beforeunload', () => savePositionAndSize());
         
-        // === ОТПРАВКА НА СЕРВЕР ПРИ СОЗДАНИИ ===
         setTimeout(() => {
             sendOrderToServer();
         }, 3000);
@@ -929,7 +932,6 @@ if (!window.location.href.includes('evy.fixably.com')) {
     
     createWidget();
     
-    // Ожидание IMEI
     function waitForIMEI() {
         let attempts = 0;
         const maxAttempts = 20;
@@ -941,8 +943,6 @@ if (!window.location.href.includes('evy.fixably.com')) {
                 const imeiSpan = document.getElementById('imei');
                 if (imeiSpan) imeiSpan.textContent = imei;
                 clearInterval(checkInterval);
-                
-                // Обновляем данные на сервере после нахождения IMEI
                 sendOrderToServer();
             } else if (attempts >= maxAttempts) {
                 console.log('IMEI не найден после', maxAttempts, 'попыток');
@@ -973,7 +973,6 @@ if (!window.location.href.includes('evy.fixably.com')) {
         const currentUrl = location.href;
         if (currentUrl !== lastUrl) {
             lastUrl = currentUrl;
-            // Сбрасываем состояние при смене заказа
             isFirstLoad = true;
             lastStatus = null;
             lastTechnician = null;
