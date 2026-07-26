@@ -15,6 +15,7 @@ let lastTechnician = null;
 let lastStatus = null;
 let lastStatusCode = null;
 let lastImei = null;
+let lastResolution = null;
 let isFirstLoad = true;
 
 // ============================================================
@@ -139,6 +140,148 @@ function getCustomer() {
 }
 
 // ============================================================
+// === ФУНКЦИЯ ДЛЯ ПОЛУЧЕНИЯ RESOLUTION (ДИАГНОЗА) ===
+// ============================================================
+
+function getResolution() {
+    console.log('🔍 Searching for diagnosis text...');
+    
+    // Ищем все записи в таймлайне
+    const timelinePanels = document.querySelectorAll('.timeline-panel');
+    let foundResolutions = [];
+    
+    for (let panel of timelinePanels) {
+        const text = panel.innerText || panel.textContent || '';
+        
+        // Проверяем, что это запись с диагнозом или резолюцией
+        if (text.includes('Diagnosis') || text.includes('Resolution')) {
+            // Ищем контейнер с текстом
+            const contentContainer = panel.querySelector('.content-container.toggle-full-content');
+            if (contentContainer) {
+                const p = contentContainer.querySelector('p');
+                if (p) {
+                    const diagnosisText = p.innerText || p.textContent || '';
+                    const trimmed = diagnosisText.trim();
+                    
+                    // Проверяем, что это не служебный текст
+                    if (trimmed && trimmed.length > 5 && 
+                        !trimmed.includes('Order created') &&
+                        !trimmed.includes('No information') &&
+                        !trimmed.includes('You canceled') &&
+                        !trimmed.includes('canceled this order') &&
+                        !trimmed.includes('Please select the reason') &&
+                        !trimmed.includes('Status:') &&
+                        !trimmed.includes('Technician:') &&
+                        !trimmed.includes('Visual inspection') &&
+                        !trimmed.includes('Reported problems') &&
+                        !trimmed.includes('Battery malfunction')) {
+                        
+                        // Определяем тип записи
+                        let type = 'unknown';
+                        if (text.includes('Resolution')) {
+                            type = 'resolution';
+                        } else if (text.includes('Diagnosis')) {
+                            type = 'diagnosis';
+                        }
+                        
+                        foundResolutions.push({
+                            type: type,
+                            text: trimmed,
+                            panel: panel,
+                            timestamp: panel.querySelector('.timeline-time')?.innerText || ''
+                        });
+                    }
+                }
+            }
+            
+            // Если не нашли в p, ищем в контейнере
+            if (!foundResolutions.length || foundResolutions[foundResolutions.length - 1].text === '') {
+                const container = panel.querySelector('.content-container.toggle-full-content');
+                if (container) {
+                    const containerText = container.innerText || container.textContent || '';
+                    const trimmed = containerText.trim();
+                    
+                    if (trimmed && trimmed.length > 10 && 
+                        !trimmed.includes('Diagnosis') &&
+                        !trimmed.includes('Diagnostic') &&
+                        !trimmed.includes('Order created') &&
+                        !trimmed.includes('No information') &&
+                        !trimmed.includes('You canceled') &&
+                        !trimmed.includes('canceled this order') &&
+                        !trimmed.includes('Please select the reason') &&
+                        !trimmed.includes('Visual inspection') &&
+                        !trimmed.includes('Reported problems') &&
+                        !trimmed.includes('Battery malfunction')) {
+                        
+                        let type = 'unknown';
+                        if (text.includes('Resolution')) {
+                            type = 'resolution';
+                        } else if (text.includes('Diagnosis')) {
+                            type = 'diagnosis';
+                        }
+                        
+                        foundResolutions.push({
+                            type: type,
+                            text: trimmed,
+                            panel: panel,
+                            timestamp: panel.querySelector('.timeline-time')?.innerText || ''
+                        });
+                    }
+                }
+            }
+        }
+    }
+    
+    // Сортируем найденные записи по времени (если есть)
+    // И выбираем сначала Resolution, потом Diagnosis
+    let bestMatch = null;
+    
+    // Сначала ищем Resolution
+    for (let item of foundResolutions) {
+        if (item.type === 'resolution') {
+            bestMatch = item;
+            break;
+        }
+    }
+    
+    // Если Resolution не найден, берем последний Diagnosis
+    if (!bestMatch && foundResolutions.length > 0) {
+        // Берем последний (самый свежий)
+        bestMatch = foundResolutions[foundResolutions.length - 1];
+    }
+    
+    if (bestMatch) {
+        console.log(`✅ ${bestMatch.type} found:`, bestMatch.text);
+        return bestMatch.text;
+    }
+    
+    // === ЗАПАСНОЙ ВАРИАНТ: Ищем в любом элементе с текстом диагноза ===
+    const allElements = document.querySelectorAll('.content-container.toggle-full-content');
+    for (let el of allElements) {
+        const text = el.innerText || el.textContent || '';
+        const trimmed = text.trim();
+        
+        if (trimmed && trimmed.length > 10 && 
+            !trimmed.includes('Order created') &&
+            !trimmed.includes('No information') &&
+            !trimmed.includes('You canceled') &&
+            !trimmed.includes('canceled this order') &&
+            !trimmed.includes('Please select the reason') &&
+            !trimmed.includes('Visual inspection') &&
+            !trimmed.includes('Reported problems') &&
+            !trimmed.includes('Battery malfunction') &&
+            !trimmed.includes('Status:') &&
+            !trimmed.includes('Technician:')) {
+            console.log('✅ Diagnosis found (fallback):', trimmed);
+            return trimmed;
+        }
+    }
+    
+    console.log('⚠️ No diagnosis found on page');
+    return null;
+}
+
+// ============================================================
 // === СБОР ДАННЫХ ===
 // ============================================================
 
@@ -154,6 +297,7 @@ function collectOrderData() {
         device_model: null,
         imei: null,
         notes: null,
+        resolution: null,
         raw_data: {}
     };
 
@@ -193,6 +337,15 @@ function collectOrderData() {
         data.notes = `Offer: ${offerTitle}`;
     }
 
+    // Resolution - ищем диагноз
+    const resolution = getResolution();
+    if (resolution) {
+        data.resolution = resolution;
+        console.log('📝 Resolution collected:', resolution);
+    } else {
+        console.log('ℹ️ No resolution found on page');
+    }
+
     data.raw_data = {
         url: window.location.href,
         title: document.title,
@@ -223,6 +376,15 @@ function hasImeiChanged() {
     return currentImei && currentImei !== 'N/A' && currentImei !== lastImei;
 }
 
+// ============================================================
+// === ПРОВЕРКА ИЗМЕНЕНИЯ RESOLUTION ===
+// ============================================================
+
+function hasResolutionChanged() {
+    const currentResolution = getResolution();
+    return currentResolution !== lastResolution;
+}
+
 function shouldSendData(currentData) {
     if (!hasTechnician()) {
         console.log('ℹ️ No technician assigned, skipping send');
@@ -237,6 +399,21 @@ function shouldSendData(currentData) {
     if (isFirstLoad) {
         console.log('📦 First load, sending initial data');
         isFirstLoad = false;
+        return true;
+    }
+
+    // Проверяем изменение resolution (всегда отправляем если есть resolution)
+    const currentResolution = getResolution();
+    if (currentResolution && currentResolution !== lastResolution) {
+        console.log('🔄 Resolution changed, sending update');
+        lastResolution = currentResolution;
+        return true;
+    }
+
+    // Если resolution есть, но его еще не отправляли - отправляем
+    if (currentResolution && !lastResolution) {
+        console.log('📝 New resolution found, sending update');
+        lastResolution = currentResolution;
         return true;
     }
 
@@ -326,7 +503,6 @@ async function sendOrderToServer() {
     }
 
     try {
-        // Отправляем через background (там уже есть офлайн-логика)
         const response = await chrome.runtime.sendMessage({
             type: 'SEND_ORDER',
             data: currentData
@@ -335,12 +511,12 @@ async function sendOrderToServer() {
         if (response && response.success) {
             console.log('✅ Order saved to server:', response.data);
             
-            // Обновляем состояние
             lastOrderData = currentData;
             lastStatus = getCurrentStatus();
             lastTechnician = getCurrentTechnician();
             lastImei = getIMEI();
             lastStatusCode = getStatusCode(lastStatus);
+            lastResolution = getResolution();
             
             if (response.data && response.data.status_changed) {
                 showNotification(`Status: ${response.data.previous_status || ''} → ${response.data.new_status || ''}`, 'success');
@@ -350,7 +526,6 @@ async function sendOrderToServer() {
             
             return response.data;
         } else {
-            // Ошибка или сохранено офлайн
             const errorMsg = response?.error || 'Unknown error';
             console.warn('⚠️ Order saved offline or error:', errorMsg);
             showNotification(`Order ${currentData.order_number} saved offline 📶`, 'warning');
@@ -361,6 +536,43 @@ async function sendOrderToServer() {
         console.error('❌ Error saving order:', error);
         showNotification('Error saving order', 'error');
         return null;
+    }
+}
+
+// ============================================================
+// === МОНИТОРИНГ ИЗМЕНЕНИЙ RESOLUTION ===
+// ============================================================
+
+function setupResolutionMonitoring() {
+    console.log('🔍 Setting up Resolution monitoring...');
+    
+    // Наблюдаем за изменениями в таймлайне
+    const timelineObserver = new MutationObserver(() => {
+        const currentResolution = getResolution();
+        if (currentResolution && currentResolution !== lastResolution) {
+            console.log('🔄 Resolution changed in timeline:', currentResolution);
+            lastResolution = currentResolution;
+            sendOrderToServer();
+        }
+    });
+    
+    // Наблюдаем за всем телом на предмет появления новых элементов
+    timelineObserver.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+    
+    // Наблюдаем за модальным окном диагностики
+    const diagText = document.getElementById('diagnosticText');
+    if (diagText) {
+        diagText.addEventListener('change', () => {
+            const currentResolution = getResolution();
+            if (currentResolution && currentResolution !== lastResolution) {
+                console.log('🔄 Resolution changed in diagnostic:', currentResolution);
+                lastResolution = currentResolution;
+                sendOrderToServer();
+            }
+        });
     }
 }
 
@@ -925,6 +1137,11 @@ if (!window.location.href.includes('evy.fixably.com')) {
         loadSavedOpacity();
         window.addEventListener('beforeunload', () => savePositionAndSize());
         
+        // Запускаем мониторинг resolution
+        setTimeout(() => {
+            setupResolutionMonitoring();
+        }, 2000);
+        
         setTimeout(() => {
             sendOrderToServer();
         }, 3000);
@@ -977,11 +1194,13 @@ if (!window.location.href.includes('evy.fixably.com')) {
             lastStatus = null;
             lastTechnician = null;
             lastImei = null;
+            lastResolution = null;
             
             setTimeout(() => {
                 if (windowDiv) {
                     updateAllData();
                     waitForIMEI();
+                    setupResolutionMonitoring();
                 }
             }, 1500);
         }
