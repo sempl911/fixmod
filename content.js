@@ -4,8 +4,6 @@
 // === НАСТРОЙКИ ===
 // ============================================================
 
-// API URL теперь хранится в background, используем отправку через сообщения
-
 // ============================================================
 // === ХРАНЕНИЕ СОСТОЯНИЯ ДЛЯ ОТСЛЕЖИВАНИЯ ИЗМЕНЕНИЙ ===
 // ============================================================
@@ -61,6 +59,7 @@ function getStatusCode(statusText) {
     if (s.includes('incoming')) return 'incoming';
     if (s.includes('withdraw')) return 'withdraw';
     if (s.includes('waiting')) return 'waiting';
+    if (s.includes('shipped')) return 'shipped';
     return 'unknown';
 }
 
@@ -87,6 +86,17 @@ function getOfferTitle() {
         }
     }
     
+    return null;
+}
+
+function getDeclinedReason() {
+    const declinedElement = document.querySelector('#customfield_7');
+    if (declinedElement && declinedElement.textContent) {
+        const reason = declinedElement.textContent.trim();
+        if (reason && reason !== 'No information') {
+            return reason;
+        }
+    }
     return null;
 }
 
@@ -131,12 +141,206 @@ function getIMEI() {
     return null;
 }
 
-function getCustomer() {
-    const customerElement = document.querySelector('#page-label');
-    if (customerElement) {
-        return customerElement.textContent.trim();
+// ============================================================
+// === ФУНКЦИИ ДЛЯ ПАРСИНГА ДАТЫ ===
+// ============================================================
+
+function parseDateFromText(text) {
+    const dateMatch = text.match(/(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+(\d{1,2})\s+(\w+)\s+(\d{4})/i);
+    if (dateMatch) {
+        const day = parseInt(dateMatch[2]);
+        const month = getMonthNumber(dateMatch[3]);
+        const year = parseInt(dateMatch[4]);
+        return new Date(year, month, day);
     }
     return null;
+}
+
+function getMonthNumber(monthName) {
+    const months = {
+        'january': 0, 'jan': 0,
+        'february': 1, 'feb': 1,
+        'march': 2, 'mar': 2,
+        'april': 3, 'apr': 3,
+        'may': 4,
+        'june': 5, 'jun': 5,
+        'july': 6, 'jul': 6,
+        'august': 7, 'aug': 7,
+        'september': 8, 'sep': 8,
+        'october': 9, 'oct': 9,
+        'november': 10, 'nov': 10,
+        'december': 11, 'dec': 11
+    };
+    return months[monthName.toLowerCase()] || 0;
+}
+
+// ============================================================
+// === ФУНКЦИЯ ДЛЯ ПОЛУЧЕНИЯ ДАННЫХ ИЗ ТАЙМЛАЙНА ===
+// ============================================================
+
+async function getTimelineData() {
+    console.log('📡 Загрузка таймлайна...');
+    
+    const timelineContainer = document.querySelector("#order-timeline");
+    if (!timelineContainer) {
+        console.warn('⚠️ #order-timeline не найден');
+        return null;
+    }
+
+    const url = timelineContainer.dataset.href;
+    if (!url) {
+        console.warn('⚠️ data-href не найден');
+        return null;
+    }
+
+    try {
+        const response = await fetch(url, {
+            credentials: 'include',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+
+        if (!response.ok) {
+            console.warn(`⚠️ Ошибка загрузки таймлайна: ${response.status}`);
+            return null;
+        }
+
+        const html = await response.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+
+        const result = {
+            statusChanges: [],
+            handlerChanges: [],
+            diagnoses: [],
+            resolutions: []
+        };
+
+        const panels = doc.querySelectorAll('.timeline-panel');
+        console.log(`📦 Найдено панелей: ${panels.length}`);
+
+        panels.forEach((panel) => {
+            const fullText = panel.innerText || panel.textContent || '';
+            const timeEl = panel.querySelector('.timeline-time');
+            const timeText = timeEl ? timeEl.textContent.trim() : null;
+
+            // Парсим дату
+            let eventDate = null;
+            if (fullText) {
+                eventDate = parseDateFromText(fullText);
+            }
+
+            let fullDate = null;
+            if (eventDate) {
+                if (timeText) {
+                    const timeMatch = timeText.match(/(\d{1,2}):(\d{2})/);
+                    if (timeMatch) {
+                        let hours = parseInt(timeMatch[1]);
+                        const minutes = parseInt(timeMatch[2]);
+                        if (hours < 6) hours += 12;
+                        eventDate.setHours(hours, minutes, 0, 0);
+                    }
+                }
+                fullDate = eventDate.toISOString();
+            }
+
+            // --- Изменение статуса ---
+            if (fullText.includes('Status was set to')) {
+                const match = fullText.match(/Status was set to "([^"]+)"/);
+                if (match) {
+                    result.statusChanges.push({
+                        new_status: match[1],
+                        time: timeText,
+                        date: fullDate
+                    });
+                }
+            }
+
+            // --- Изменение техника ---
+            else if (fullText.includes('Handler was set to')) {
+                const match = fullText.match(/Handler was set to "([^"]+)"/);
+                if (match) {
+                    result.handlerChanges.push({
+                        handler: match[1],
+                        time: timeText,
+                        date: fullDate
+                    });
+                }
+            }
+            else if (fullText.includes('Handler was removed')) {
+                result.handlerChanges.push({
+                    handler: 'REMOVED',
+                    time: timeText,
+                    date: fullDate
+                });
+            }
+
+            // --- Диагноз ---
+            else if (fullText.includes('Diagnosis')) {
+                const content = panel.querySelector('.content-container.toggle-full-content');
+                let text = null;
+                if (content) {
+                    const p = content.querySelector('p');
+                    if (p) text = p.textContent.trim();
+                }
+                if (!text) {
+                    const lines = fullText.split('\n');
+                    for (let line of lines) {
+                        const trimmed = line.trim();
+                        if (trimmed && trimmed.length > 10 && 
+                            !trimmed.includes('Diagnosis') && 
+                            !trimmed.includes('Toggle Dropdown') &&
+                            !trimmed.includes('API')) {
+                            text = trimmed;
+                            break;
+                        }
+                    }
+                }
+                if (text && text.length > 5) {
+                    result.diagnoses.push({
+                        text: text,
+                        time: timeText,
+                        date: fullDate
+                    });
+                }
+            }
+
+            // --- Резолюция ---
+            else if (fullText.includes('Resolution')) {
+                const content = panel.querySelector('.content-container.toggle-full-content');
+                let text = null;
+                if (content) {
+                    const p = content.querySelector('p');
+                    if (p) text = p.textContent.trim();
+                }
+                if (!text) {
+                    const lines = fullText.split('\n');
+                    for (let line of lines) {
+                        const trimmed = line.trim();
+                        if (trimmed && trimmed.length > 10 && 
+                            !trimmed.includes('Resolution') && 
+                            !trimmed.includes('Toggle Dropdown') &&
+                            !trimmed.includes('API')) {
+                            text = trimmed;
+                            break;
+                        }
+                    }
+                }
+                if (text && text.length > 5) {
+                    result.resolutions.push({
+                        text: text,
+                        time: timeText,
+                        date: fullDate
+                    });
+                }
+            }
+        });
+
+        return result;
+
+    } catch (error) {
+        console.warn('⚠️ Ошибка при загрузке таймлайна:', error);
+        return null;
+    }
 }
 
 // ============================================================
@@ -285,7 +489,7 @@ function getResolution() {
 // === СБОР ДАННЫХ ===
 // ============================================================
 
-function collectOrderData() {
+async function collectOrderData() {
     const data = {
         order_number: null,
         status: null,
@@ -298,9 +502,15 @@ function collectOrderData() {
         imei: null,
         notes: null,
         resolution: null,
+        declined_reason: null,
+        status_changes: [],
+        handler_changes: [],
+        diagnoses: [],
+        resolutions: [],
         raw_data: {}
     };
 
+    // --- Основные данные ---
     const orderNumber = getOrderNumber();
     if (orderNumber && orderNumber !== 'N/A') {
         data.order_number = orderNumber;
@@ -315,11 +525,6 @@ function collectOrderData() {
     const technician = getCurrentTechnician();
     if (technician) {
         data.technician = technician;
-    }
-
-    const customer = getCustomer();
-    if (customer) {
-        data.customer = customer;
     }
 
     const deviceName = getDeviceName();
@@ -337,13 +542,32 @@ function collectOrderData() {
         data.notes = `Offer: ${offerTitle}`;
     }
 
-    // Resolution - ищем диагноз
-    const resolution = getResolution();
-    if (resolution) {
-        data.resolution = resolution;
-        console.log('📝 Resolution collected:', resolution);
-    } else {
-        console.log('ℹ️ No resolution found on page');
+    const declinedReason = getDeclinedReason();
+    if (declinedReason) {
+        data.declined_reason = declinedReason;
+    }
+
+    // --- Данные из таймлайна ---
+    const timelineData = await getTimelineData();
+    if (timelineData) {
+        data.status_changes = timelineData.statusChanges || [];
+        data.handler_changes = timelineData.handlerChanges || [];
+        data.diagnoses = timelineData.diagnoses || [];
+        data.resolutions = timelineData.resolutions || [];
+        
+        // Берем последнюю резолюцию как основную
+        if (data.resolutions.length > 0) {
+            const lastResolution = data.resolutions[data.resolutions.length - 1];
+            data.resolution = lastResolution.text;
+        }
+    }
+
+    // Если резолюция не найдена через таймлайн, пробуем старым методом
+    if (!data.resolution) {
+        const resolution = getResolution();
+        if (resolution) {
+            data.resolution = resolution;
+        }
     }
 
     data.raw_data = {
@@ -376,10 +600,6 @@ function hasImeiChanged() {
     return currentImei && currentImei !== 'N/A' && currentImei !== lastImei;
 }
 
-// ============================================================
-// === ПРОВЕРКА ИЗМЕНЕНИЯ RESOLUTION ===
-// ============================================================
-
 function hasResolutionChanged() {
     const currentResolution = getResolution();
     return currentResolution !== lastResolution;
@@ -402,7 +622,6 @@ function shouldSendData(currentData) {
         return true;
     }
 
-    // Проверяем изменение resolution (всегда отправляем если есть resolution)
     const currentResolution = getResolution();
     if (currentResolution && currentResolution !== lastResolution) {
         console.log('🔄 Resolution changed, sending update');
@@ -410,7 +629,6 @@ function shouldSendData(currentData) {
         return true;
     }
 
-    // Если resolution есть, но его еще не отправляли - отправляем
     if (currentResolution && !lastResolution) {
         console.log('📝 New resolution found, sending update');
         lastResolution = currentResolution;
@@ -492,11 +710,11 @@ function showNotification(message, type = 'success') {
 }
 
 // ============================================================
-// === ОТПРАВКА НА СЕРВЕР (через background с офлайн-поддержкой) ===
+// === ОТПРАВКА НА СЕРВЕР ===
 // ============================================================
 
 async function sendOrderToServer() {
-    const currentData = collectOrderData();
+    const currentData = await collectOrderData();
     
     if (!shouldSendData(currentData)) {
         return null;
@@ -516,7 +734,7 @@ async function sendOrderToServer() {
             lastTechnician = getCurrentTechnician();
             lastImei = getIMEI();
             lastStatusCode = getStatusCode(lastStatus);
-            lastResolution = getResolution();
+            lastResolution = currentData.resolution;
             
             if (response.data && response.data.status_changed) {
                 showNotification(`Status: ${response.data.previous_status || ''} → ${response.data.new_status || ''}`, 'success');
@@ -540,13 +758,12 @@ async function sendOrderToServer() {
 }
 
 // ============================================================
-// === МОНИТОРИНГ ИЗМЕНЕНИЙ RESOLUTION ===
+// === МОНИТОРИНГ ИЗМЕНЕНИЙ ===
 // ============================================================
 
 function setupResolutionMonitoring() {
     console.log('🔍 Setting up Resolution monitoring...');
     
-    // Наблюдаем за изменениями в таймлайне
     const timelineObserver = new MutationObserver(() => {
         const currentResolution = getResolution();
         if (currentResolution && currentResolution !== lastResolution) {
@@ -556,13 +773,11 @@ function setupResolutionMonitoring() {
         }
     });
     
-    // Наблюдаем за всем телом на предмет появления новых элементов
     timelineObserver.observe(document.body, {
         childList: true,
         subtree: true
     });
     
-    // Наблюдаем за модальным окном диагностики
     const diagText = document.getElementById('diagnosticText');
     if (diagText) {
         diagText.addEventListener('change', () => {
@@ -1113,7 +1328,6 @@ if (!window.location.href.includes('evy.fixably.com')) {
             }
         });
         
-        // Сообщения от popup
         if (typeof chrome !== 'undefined' && chrome.runtime) {
             chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 if (request.type === 'UPDATE_OPACITY') {
@@ -1137,7 +1351,6 @@ if (!window.location.href.includes('evy.fixably.com')) {
         loadSavedOpacity();
         window.addEventListener('beforeunload', () => savePositionAndSize());
         
-        // Запускаем мониторинг resolution
         setTimeout(() => {
             setupResolutionMonitoring();
         }, 2000);
