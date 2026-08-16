@@ -1,36 +1,52 @@
 {
-  "diagnosis": [
-    { "text": "🔋 Battery issue", "value": "Battery issue" },
-  { "text": "📱 Display issue", "value": "Display issue" },
-  { "text": "📸 Camera issue", "value": "Camera issue" },
-  { "text": "🎤 Microphone issue", "value": "Microphone issue" },
-  { "text": "🔊 Speaker issue", "value": "Speaker issue" },
-  { "text": "⚡ Charging port", "value": "Charging port issue" },
-  { "text": "📶 WiFi/Bluetooth", "value": "WiFi/Bluetooth issue" },
-  { "text": "💧 Water damage", "value": "Water damage" },
-  { "text": "🔄 Software issue", "value": "Software issue" },
-  { "text": "📱 Motherboard issue", "value": "Motherboard issue" },
-  { "text": "🔌 Not charging", "value": "Not charging" },
-  { "text": "🔒 Locked device", "value": "Locked device" },
-  { "text": "📱 No power", "value": "No power" },
-  { "text": "🔋 Battery swollen", "value": "Battery swollen" }
-  ],
-  "resolution": [
-    { "text": "✅ Replacement battery", "value": "Replacement battery." },
-    { "text": "✅ Replacement display", "value": "Replacement display." },
-    { "text": "✅ Replacement rear cameras", "value": "Replacement rear cameras." },
-    { "text": "✅ Replacement SUB board", "value": "Replacement SUB board." },
-    { "text": "✅ Software restored", "value": "Software restored." },
-    { "text": "✅ Water damage cleaned", "value": "Water damage cleaned." },
-    { "text": "✅ Replacement housing", "value": "Replacement housing." },
-    { "text": "🔧 No defects found", "value": "No defects found." },
-    { "text": "✅ Replacement tapes", "value": "Replacement tapes." },
-    { "text": "✅ Replacement front camera", "value": "Replacement front camera." },
-    { "text": "🔋 Battery calibrated", "value": "Battery calibrated." },
-    { "text": "📱 Screen calibrated", "value": "Screen calibrated." },
-    { "text": "✅ Microphone replaced", "value": "Microphone replaced." },
-    { "text": "✅ Speaker replaced", "value": "Speaker replaced." },
-    { "text": "🔓 Device unlocked", "value": "Device unlocked." },
-    { "text": "🔄 Factory reset", "value": "Factory reset performed." }
-  ]
+  "diagnosis": {
+    "actions": [
+      { "id": "check", "label": "🔍 Check", "template": "Check" },
+      { "id": "diagnose", "label": "🩺 Diagnose", "template": "Diagnose" },
+      { "id": "test", "label": "🧪 Test", "template": "Test" },
+      { "id": "inspect", "label": "🔎 Issue", "template": "Issue: " }
+    ],
+    "components": [
+      { "id": "battery_issue", "label": "🔋 battery" },
+      { "id": "display_issue", "label": "📱 display" },
+      { "id": "camera_issue", "label": "📸 camera" },
+      { "id": "microphone_issue", "label": "🎤 microphone" },
+      { "id": "speaker_issue", "label": "🔊 speaker" },
+      { "id": "charging_issue", "label": "⚡ charging port" },
+      { "id": "wifi_issue", "label": "📶 WiFi/Bluetooth" },
+      { "id": "water_damage", "label": "💧 water damage" },
+      { "id": "software_issue", "label": "🔄 software" },
+      { "id": "motherboard_issue", "label": "📱 motherboard" },
+      { "id": "not_charging", "label": "🔌 not charging" },
+      { "id": "locked_device", "label": "🔒 locked device" },
+      { "id": "no_power", "label": "📱 no power on" }
+    ]
+  },
+  "resolution": {
+    "actions": [
+      { "id": "replacement", "label": "✅ Replacement", "template": "Replacement: " },
+      { "id": "repair", "label": "🔧 Repair", "template": "Repair" },
+      { "id": "no_repair", "label": "🚫 No repair", "template": "No repair" },
+      { "id": "restored", "label": "🔄 Restored", "template": "Restored" },
+      { "id": "calibrated", "label": "⚙️ Calibrated", "template": "Calibrated" },
+      { "id": "reinstall", "label": "🔄 Reinstall", "template": "Reinstall" },
+      { "id": "reset", "label": "🔄 Reset", "template": "Reset" }
+    ],
+    "components": [
+  { "id": "battery", "label": "🔋 battery" },
+  { "id": "display", "label": "📱 display" },
+  { "id": "rear_cameras", "label": "📸 rear cameras" },
+  { "id": "front_camera", "label": "📷 front camera" },
+  { "id": "sub_board", "label": "🔌 sub board" },
+  { "id": "housing", "label": "🏠 housing" },
+  { "id": "tapes", "label": "📐 tapes" },
+  { "id": "microphone", "label": "🎤 microphone" },
+  { "id": "speaker", "label": "🔊 speaker" },
+  { "id": "software", "label": "💻 software" },
+  { "id": "water_damage", "label": "💧 water damage" },
+  { "id": "no_defects", "label": "✅ no defects found" },
+  { "id": "os", "label": "💿 operation system" },
+  { "id": "motherboard", "label": "🔧 motherboard" }
+]
+  }
 }

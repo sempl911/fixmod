@@ -1,4 +1,4 @@
-// background.js - Service Worker с офлайн-режимом
+// background.js - Service Worker с офлайн-режимом и поддержкой скачивания
 
 console.log('🔧 FixMod Background Service Started');
 
@@ -19,7 +19,6 @@ chrome.storage.sync.get(['apiUrl'], (result) => {
 // ============================================================
 async function checkServerConnection() {
     try {
-        // Пробуем получить health статус
         const healthUrl = API_URL.replace('/api/fixably/order', '/health');
         const response = await fetch(healthUrl, {
             method: 'GET',
@@ -30,9 +29,7 @@ async function checkServerConnection() {
         isOnline = false;
     }
     
-    // Обновляем статус в storage
     chrome.storage.local.set({ serverStatus: isOnline ? 'online' : 'offline' });
-    
     return isOnline;
 }
 
@@ -137,10 +134,61 @@ function updateBadge(count) {
 }
 
 // ============================================================
-// 6. ОБРАБОТКА СООБЩЕНИЙ
+// 6. СКАЧИВАНИЕ ФОТО (ЧЕРЕЗ DOWNLOADS API)
+// ============================================================
+function downloadPhoto(url, filename) {
+    return new Promise((resolve) => {
+        const finalFilename = filename || `photo_${Date.now()}.jpg`;
+        
+        console.log(`📥 Downloading: ${finalFilename}`);
+        
+        try {
+            chrome.downloads.download({
+                url: url,
+                filename: finalFilename,
+                saveAs: false,
+                conflictAction: 'uniquify'
+            }, (downloadId) => {
+                // Проверяем ошибку
+                if (chrome.runtime.lastError) {
+                    const errorMsg = chrome.runtime.lastError.message;
+                    console.error('❌ Download error:', errorMsg);
+                    resolve({ success: false, error: errorMsg });
+                    return;
+                }
+                
+                if (downloadId && downloadId > 0) {
+                    console.log('✅ Download started, ID:', downloadId);
+                    resolve({ success: true, downloadId: downloadId, filename: finalFilename });
+                } else {
+                    resolve({ success: false, error: 'Unknown error - no download ID' });
+                }
+            });
+        } catch (error) {
+            console.error('❌ Download exception:', error);
+            resolve({ success: false, error: error.message });
+        }
+    });
+}
+
+// ============================================================
+// 7. ОБРАБОТКА СООБЩЕНИЙ
 // ============================================================
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    // Сохранение заказа (с офлайн-поддержкой)
+    // Скачивание фото
+    if (request.type === 'DOWNLOAD_PHOTO') {
+        console.log('📥 Download photo request');
+        downloadPhoto(request.url, request.filename)
+            .then(result => {
+                sendResponse(result);
+            })
+            .catch(error => {
+                sendResponse({ success: false, error: error.message });
+            });
+        return true; // Асинхронный ответ
+    }
+    
+    // Сохранение заказа
     if (request.type === 'SEND_ORDER') {
         console.log('📤 Saving order:', request.data.order_number);
         
@@ -222,7 +270,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 // ============================================================
-// 7. ОБРАБОТКА СОХРАНЕНИЯ ЗАКАЗА
+// 8. ОБРАБОТКА СОХРАНЕНИЯ ЗАКАЗА
 // ============================================================
 async function handleSaveOrder(orderData) {
     const isConnected = await checkServerConnection();
@@ -230,10 +278,7 @@ async function handleSaveOrder(orderData) {
     if (isConnected) {
         try {
             const result = await sendOrderToServer(orderData);
-            
-            // После успешной отправки пробуем синхронизировать офлайн-заказы
             await syncOfflineOrders();
-            
             return result;
         } catch (error) {
             console.warn('⚠️ Send failed, saving offline:', error.message);
@@ -248,9 +293,8 @@ async function handleSaveOrder(orderData) {
 }
 
 // ============================================================
-// 8. ПЕРИОДИЧЕСКАЯ СИНХРОНИЗАЦИЯ
+// 9. ПЕРИОДИЧЕСКАЯ СИНХРОНИЗАЦИЯ
 // ============================================================
-// Создаём будильник для синхронизации каждые 30 секунд
 chrome.alarms.create('syncOfflineOrders', { periodInMinutes: 0.5 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
@@ -259,18 +303,16 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     }
 });
 
-// Периодическая проверка статуса (каждые 15 секунд)
 setInterval(() => {
     checkServerConnection();
 }, 15000);
 
 // ============================================================
-// 9. СОБЫТИЯ УСТАНОВКИ И ЗАПУСКА
+// 10. СОБЫТИЯ УСТАНОВКИ И ЗАПУСКА
 // ============================================================
 chrome.runtime.onInstalled.addListener(() => {
     console.log('📦 FixMod installed');
     
-    // Настройки по умолчанию
     chrome.storage.sync.get(['widgetOpacity', 'apiUrl'], (result) => {
         if (result.widgetOpacity === undefined) {
             chrome.storage.sync.set({ widgetOpacity: 85 });
@@ -282,7 +324,6 @@ chrome.runtime.onInstalled.addListener(() => {
         }
     });
     
-    // Проверяем связь
     checkServerConnection();
 });
 

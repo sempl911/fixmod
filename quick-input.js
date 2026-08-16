@@ -1,12 +1,21 @@
-// Модуль быстрого ввода для полей Diagnosis и Resolution
+// Модуль быстрого ввода для полей Diagnosis и Resolution (с конструктором предложений)
 class QuickInputHelper {
     constructor() {
         this.buttonsContainer = null;
         this.activeField = null;
         this.currentType = null;
-        this.phrases = { diagnosis: [], resolution: [] };
         this.isLoading = false;
         this.isVisible = false;
+        
+        // Для конструктора предложений
+        this.selectedAction = null;
+        this.selectedComponents = [];
+        this.availableActions = [];
+        this.availableComponents = [];
+        this.actionButtons = [];
+        this.componentButtons = [];
+        this.previewElement = null;
+        this.clearButton = null;
         
         // Для перетаскивания
         this.isDragging = false;
@@ -15,24 +24,19 @@ class QuickInputHelper {
         this.containerStartX = 0;
         this.containerStartY = 0;
         
-        // Ключи для сохранения позиции
         this.STORAGE_KEY = 'quick_input_panel_position';
+        this.THEME_STORAGE_KEY = 'widgetTheme';
         
-        // Загружаем подсказки
         this.loadSuggestions();
-        
-        // Слушаем изменения темы
         this.setupThemeListener();
     }
     
-    // Слушатель изменения темы
     setupThemeListener() {
         if (typeof chrome !== 'undefined' && chrome.runtime) {
             chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 if (request.type === 'UPDATE_THEME') {
                     const theme = request.colors;
                     const gradient = `linear-gradient(135deg, ${theme.c1} 0%, ${theme.c2} 100%)`;
-                    
                     if (this.buttonsContainer) {
                         this.buttonsContainer.style.background = gradient;
                     }
@@ -43,7 +47,6 @@ class QuickInputHelper {
         }
     }
     
-    // Загрузка подсказок из JSON файла
     async loadSuggestions() {
         this.isLoading = true;
         try {
@@ -54,15 +57,54 @@ class QuickInputHelper {
             console.log('Quick Input: Подсказки загружены', this.phrases);
         } catch (error) {
             console.error('Quick Input: Ошибка загрузки подсказок', error);
+            // Дефолтные данные для конструктора
             this.phrases = {
-                diagnosis: [
-                    { text: "🔋 Battery issue", value: "Battery issue" },
-                    { text: "📱 Display issue", value: "Display issue" }
-                ],
-                resolution: [
-                    { text: "✅ Battery replaced", value: "Battery replaced" },
-                    { text: "✅ Display replaced", value: "Display replaced" }
-                ]
+                diagnosis: {
+                    actions: [
+                        { id: 'replacement', label: '🔧 Replacement', template: 'Replacement' },
+                        { id: 'repair', label: '🔨 Repair', template: 'Repair' },
+                        { id: 'cleaning', label: '🧹 Cleaning', template: 'Cleaning' },
+                        { id: 'check', label: '🔍 Check', template: 'Check' },
+                        { id: 'testing', label: '🧪 Testing', template: 'Testing' }
+                    ],
+                    components: [
+                        { id: 'battery', label: '🔋 Battery' },
+                        { id: 'display', label: '📱 Display' },
+                        { id: 'tape', label: '📐 Tape' },
+                        { id: 'adhesive', label: '🧪 Adhesive' },
+                        { id: 'camera', label: '📷 Camera' },
+                        { id: 'speaker', label: '🔊 Speaker' },
+                        { id: 'microphone', label: '🎤 Microphone' },
+                        { id: 'button', label: '🔘 Button' },
+                        { id: 'connector', label: '🔌 Connector' },
+                        { id: 'flex', label: '📎 Flex cable' },
+                        { id: 'glass', label: '🪟 Glass' },
+                        { id: 'housing', label: '🏠 Housing' }
+                    ]
+                },
+                resolution: {
+                    actions: [
+                        { id: 'replacement', label: '✅ Replacement', template: 'Replacement' },
+                        { id: 'repair', label: '✅ Repair', template: 'Repair' },
+                        { id: 'cleaning', label: '✅ Cleaning', template: 'Cleaning' },
+                        { id: 'check', label: '✅ Check', template: 'Check' },
+                        { id: 'testing', label: '✅ Testing', template: 'Testing' }
+                    ],
+                    components: [
+                        { id: 'battery', label: '🔋 Battery' },
+                        { id: 'display', label: '📱 Display' },
+                        { id: 'tape', label: '📐 Tape' },
+                        { id: 'adhesive', label: '🧪 Adhesive' },
+                        { id: 'camera', label: '📷 Camera' },
+                        { id: 'speaker', label: '🔊 Speaker' },
+                        { id: 'microphone', label: '🎤 Microphone' },
+                        { id: 'button', label: '🔘 Button' },
+                        { id: 'connector', label: '🔌 Connector' },
+                        { id: 'flex', label: '📎 Flex cable' },
+                        { id: 'glass', label: '🪟 Glass' },
+                        { id: 'housing', label: '🏠 Housing' }
+                    ]
+                }
             };
         }
         this.isLoading = false;
@@ -95,9 +137,8 @@ class QuickInputHelper {
         } catch(e) {}
     }
     
-    // Загрузка сохраненной темы
     loadSavedTheme() {
-        const savedTheme = localStorage.getItem('widgetTheme');
+        const savedTheme = localStorage.getItem(this.THEME_STORAGE_KEY);
         if (savedTheme && this.buttonsContainer) {
             const colorSchemes = {
                 default: { c1: '#667eea', c2: '#764ba2' },
@@ -134,12 +175,15 @@ class QuickInputHelper {
             box-shadow: 0 4px 20px rgba(0,0,0,0.25);
             padding: 12px;
             z-index: 100000;
-            max-width: 420px;
-            min-width: 280px;
+            max-width: 480px;
+            min-width: 320px;
             cursor: default;
             user-select: none;
+            max-height: 90vh;
+            overflow-y: auto;
         `;
         
+        // Заголовок
         const title = document.createElement('div');
         title.id = 'quick-input-header';
         title.style.cssText = `
@@ -158,7 +202,7 @@ class QuickInputHelper {
         title.innerHTML = `
             <span style="display: flex; align-items: center; gap: 8px; cursor: move;">
                 <span style="font-size: 14px;">⋮⋮</span>
-                <span>⚡ Быстрый ввод для <span id="quick-input-type-label">Diagnosis</span></span>
+                <span>⚡ Constructor for <span id="quick-input-type-label">Diagnosis</span></span>
             </span>
             <span id="close-quick-panel" style="cursor: pointer; font-size: 16px; opacity: 0.7; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: rgba(255,255,255,0.1);">✕</span>
         `;
@@ -166,28 +210,178 @@ class QuickInputHelper {
         
         this.setupDragging(title);
         
-        this.buttonsGrid = document.createElement('div');
-        this.buttonsGrid.style.cssText = `
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
+        // Блок превью
+        const previewContainer = document.createElement('div');
+        previewContainer.style.cssText = `
+            background: rgba(255,255,255,0.15);
+            border-radius: 8px;
+            padding: 8px 12px;
+            margin-bottom: 12px;
+            min-height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
             gap: 8px;
-            max-height: 320px;
-            overflow-y: auto;
-            padding: 4px 2px;
         `;
-        this.buttonsContainer.appendChild(this.buttonsGrid);
         
+        this.previewElement = document.createElement('span');
+        this.previewElement.style.cssText = `
+            color: white;
+            font-size: 14px;
+            font-weight: 500;
+            flex: 1;
+            word-break: break-word;
+        `;
+        this.previewElement.textContent = 'Select action →';
+        
+        this.clearButton = document.createElement('button');
+        this.clearButton.textContent = '✕';
+        this.clearButton.style.cssText = `
+            background: rgba(255,255,255,0.2);
+            border: none;
+            border-radius: 50%;
+            color: white;
+            width: 28px;
+            height: 28px;
+            cursor: pointer;
+            font-size: 14px;
+            display: none;
+            flex-shrink: 0;
+            transition: background 0.2s;
+        `;
+        this.clearButton.onmouseenter = () => {
+            this.clearButton.style.background = 'rgba(255,255,255,0.4)';
+        };
+        this.clearButton.onmouseleave = () => {
+            this.clearButton.style.background = 'rgba(255,255,255,0.2)';
+        };
+        this.clearButton.onclick = (e) => {
+            e.stopPropagation();
+            this.clearSelection();
+        };
+        
+        previewContainer.appendChild(this.previewElement);
+        previewContainer.appendChild(this.clearButton);
+        this.buttonsContainer.appendChild(previewContainer);
+        
+        // Блок действий
+        const actionLabel = document.createElement('div');
+        actionLabel.style.cssText = `
+            color: rgba(255,255,255,0.8);
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+        `;
+        actionLabel.textContent = 'Action';
+        this.buttonsContainer.appendChild(actionLabel);
+        
+        this.actionContainer = document.createElement('div');
+        this.actionContainer.style.cssText = `
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 12px;
+        `;
+        this.buttonsContainer.appendChild(this.actionContainer);
+        
+        // Блок компонентов
+        const compLabel = document.createElement('div');
+        compLabel.style.cssText = `
+            color: rgba(255,255,255,0.8);
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+        `;
+        compLabel.textContent = 'Components (tap to add/remove)';
+        this.buttonsContainer.appendChild(compLabel);
+        
+        this.componentContainer = document.createElement('div');
+        this.componentContainer.style.cssText = `
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        `;
+        this.buttonsContainer.appendChild(this.componentContainer);
+        
+        // Кнопка вставки
+        const insertContainer = document.createElement('div');
+        insertContainer.style.cssText = `
+            margin-top: 12px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(255,255,255,0.2);
+            display: flex;
+            gap: 8px;
+        `;
+        
+        const insertBtn = document.createElement('button');
+        insertBtn.textContent = '📋 Insert';
+        insertBtn.style.cssText = `
+            flex: 1;
+            background: rgba(255,255,255,0.95);
+            border: none;
+            border-radius: 8px;
+            padding: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            color: #333;
+            transition: all 0.2s;
+        `;
+        insertBtn.onmouseenter = () => {
+            insertBtn.style.background = 'white';
+            insertBtn.style.transform = 'scale(1.02)';
+        };
+        insertBtn.onmouseleave = () => {
+            insertBtn.style.background = 'rgba(255,255,255,0.95)';
+            insertBtn.style.transform = 'scale(1)';
+        };
+        insertBtn.onclick = (e) => {
+            e.stopPropagation();
+            this.insertConstructedText();
+        };
+        insertContainer.appendChild(insertBtn);
+        
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Сancel';
+        cancelBtn.style.cssText = `
+            background: rgba(255,255,255,0.15);
+            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 8px;
+            padding: 10px 16px;
+            font-size: 13px;
+            cursor: pointer;
+            color: white;
+            transition: background 0.2s;
+        `;
+        cancelBtn.onmouseenter = () => {
+            cancelBtn.style.background = 'rgba(255,255,255,0.3)';
+        };
+        cancelBtn.onmouseleave = () => {
+            cancelBtn.style.background = 'rgba(255,255,255,0.15)';
+        };
+        cancelBtn.onclick = (e) => {
+            e.stopPropagation();
+            this.hide();
+        };
+        insertContainer.appendChild(cancelBtn);
+        
+        this.buttonsContainer.appendChild(insertContainer);
+        
+        // Подсказка для перетаскивания
         const dragHint = document.createElement('div');
         dragHint.style.cssText = `
-            color: rgba(255,255,255,0.5);
+            color: rgba(255,255,255,0.4);
             font-size: 10px;
             margin-top: 8px;
             padding-top: 6px;
-            border-top: 1px solid rgba(255,255,255,0.2);
+            border-top: 1px solid rgba(255,255,255,0.1);
             text-align: center;
-            cursor: default;
         `;
-        dragHint.innerHTML = '💡 Перетащите за ⋮⋮ чтобы переместить окно';
+        dragHint.textContent = '💡 Drag ⋮⋮ to move window';
         this.buttonsContainer.appendChild(dragHint);
         
         document.body.appendChild(this.buttonsContainer);
@@ -250,70 +444,271 @@ class QuickInputHelper {
     }
     
     updateButtons(type) {
-        if (!this.buttonsGrid) this.createButtonsPanel();
+        if (!this.actionContainer || !this.componentContainer) {
+            this.createButtonsPanel();
+        }
         if (this.isLoading) {
-            this.buttonsGrid.innerHTML = '<div style="color:white; text-align:center; grid-column:span 2;">Загрузка подсказок...</div>';
+            this.actionContainer.innerHTML = '<span style="color:white;">Загрузка...</span>';
+            this.componentContainer.innerHTML = '';
             return;
         }
         
         this.currentType = type;
-        this.buttonsGrid.innerHTML = '';
+        this.clearSelection();
         
-        const phrasesList = this.phrases[type] || this.phrases.diagnosis;
+        const data = this.phrases[type] || this.phrases.diagnosis;
+        this.availableActions = data.actions || [];
+        this.availableComponents = data.components || [];
         
-        if (!phrasesList || phrasesList.length === 0) {
-            this.buttonsGrid.innerHTML = '<div style="color:white; text-align:center; grid-column:span 2;">Нет подсказок</div>';
-            return;
-        }
-        
-        phrasesList.forEach(phrase => {
-            const btn = document.createElement('button');
-            btn.textContent = phrase.text;
-            btn.style.cssText = `
-                background: rgba(255,255,255,0.95);
-                border: none;
-                border-radius: 8px;
-                padding: 8px 10px;
-                font-size: 12px;
-                cursor: pointer;
-                transition: all 0.2s;
-                text-align: left;
-                color: #333;
-                font-weight: 500;
-                font-family: inherit;
-            `;
-            btn.onmouseenter = () => {
-                btn.style.background = 'white';
-                btn.style.transform = 'scale(1.02)';
-                btn.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
-            };
-            btn.onmouseleave = () => {
-                btn.style.background = 'rgba(255,255,255,0.95)';
-                btn.style.transform = 'scale(1)';
-                btn.style.boxShadow = 'none';
-            };
-            btn.onclick = (e) => {
-                e.stopPropagation();
-                this.insertText(phrase.value);
-            };
-            this.buttonsGrid.appendChild(btn);
-        });
-        
+        // Обновляем заголовок
         const labelSpan = document.getElementById('quick-input-type-label');
         if (labelSpan) {
             labelSpan.textContent = type === 'diagnosis' ? 'Diagnosis' : 'Resolution';
         }
+        
+        // Создаем кнопки действий
+        this.actionContainer.innerHTML = '';
+        this.availableActions.forEach(action => {
+            const btn = this.createActionButton(action);
+            this.actionContainer.appendChild(btn);
+        });
+        
+        // Создаем кнопки компонентов
+        this.componentContainer.innerHTML = '';
+        this.availableComponents.forEach(component => {
+            const btn = this.createComponentButton(component);
+            this.componentContainer.appendChild(btn);
+        });
+        
+        this.updatePreview();
     }
     
-    insertText(text) {
+    createActionButton(action) {
+        const btn = document.createElement('button');
+        btn.textContent = action.label;
+        btn.dataset.actionId = action.id;
+        btn.style.cssText = `
+            background: rgba(255,255,255,0.15);
+            border: 2px solid transparent;
+            border-radius: 8px;
+            padding: 6px 14px;
+            font-size: 12px;
+            cursor: pointer;
+            color: white;
+            font-weight: 500;
+            transition: all 0.2s;
+            font-family: inherit;
+        `;
+        btn.onmouseenter = () => {
+            if (!btn.classList.contains('selected')) {
+                btn.style.background = 'rgba(255,255,255,0.3)';
+            }
+        };
+        btn.onmouseleave = () => {
+            if (!btn.classList.contains('selected')) {
+                btn.style.background = 'rgba(255,255,255,0.15)';
+            }
+        };
+        btn.onclick = (e) => {
+            e.stopPropagation();
+            this.selectAction(action.id);
+        };
+        return btn;
+    }
+    
+    createComponentButton(component) {
+        const btn = document.createElement('button');
+        btn.textContent = component.label;
+        btn.dataset.componentId = component.id;
+        btn.style.cssText = `
+            background: rgba(255,255,255,0.1);
+            border: 2px solid rgba(255,255,255,0.2);
+            border-radius: 8px;
+            padding: 6px 12px;
+            font-size: 12px;
+            cursor: pointer;
+            color: white;
+            transition: all 0.2s;
+            font-family: inherit;
+            opacity: 0.8;
+        `;
+        btn.onmouseenter = () => {
+            if (!btn.classList.contains('selected')) {
+                btn.style.background = 'rgba(255,255,255,0.25)';
+                btn.style.transform = 'scale(1.05)';
+            }
+        };
+        btn.onmouseleave = () => {
+            if (!btn.classList.contains('selected')) {
+                btn.style.background = 'rgba(255,255,255,0.1)';
+                btn.style.transform = 'scale(1)';
+            }
+        };
+        btn.onclick = (e) => {
+            e.stopPropagation();
+            this.toggleComponent(component.id);
+        };
+        return btn;
+    }
+    
+    selectAction(actionId) {
+        // Снимаем выделение со всех действий
+        const allActionBtns = this.actionContainer.querySelectorAll('button');
+        allActionBtns.forEach(btn => {
+            btn.classList.remove('selected');
+            btn.style.background = 'rgba(255,255,255,0.15)';
+            btn.style.borderColor = 'transparent';
+            btn.style.transform = 'scale(1)';
+        });
+        
+        // Выделяем выбранное действие
+        const selectedBtn = this.actionContainer.querySelector(`button[data-action-id="${actionId}"]`);
+        if (selectedBtn) {
+            selectedBtn.classList.add('selected');
+            selectedBtn.style.background = 'rgba(255,255,255,0.35)';
+            selectedBtn.style.borderColor = 'white';
+            selectedBtn.style.transform = 'scale(1.05)';
+        }
+        
+        const action = this.availableActions.find(a => a.id === actionId);
+        if (action) {
+            this.selectedAction = action;
+        }
+        
+        this.updatePreview();
+    }
+    
+    toggleComponent(componentId) {
+        const index = this.selectedComponents.indexOf(componentId);
+        if (index > -1) {
+            this.selectedComponents.splice(index, 1);
+        } else {
+            this.selectedComponents.push(componentId);
+        }
+        
+        // Обновляем визуальное состояние кнопок
+        const allCompBtns = this.componentContainer.querySelectorAll('button');
+        allCompBtns.forEach(btn => {
+            const id = btn.dataset.componentId;
+            if (this.selectedComponents.includes(id)) {
+                btn.classList.add('selected');
+                btn.style.background = 'rgba(255,255,255,0.35)';
+                btn.style.borderColor = 'white';
+                btn.style.transform = 'scale(1.05)';
+                btn.style.opacity = '1';
+            } else {
+                btn.classList.remove('selected');
+                btn.style.background = 'rgba(255,255,255,0.1)';
+                btn.style.borderColor = 'rgba(255,255,255,0.2)';
+                btn.style.transform = 'scale(1)';
+                btn.style.opacity = '0.8';
+            }
+        });
+        
+        this.updatePreview();
+    }
+    
+    clearSelection() {
+        this.selectedAction = null;
+        this.selectedComponents = [];
+        
+        // Снимаем выделение со всех кнопок
+        if (this.actionContainer) {
+            const actionBtns = this.actionContainer.querySelectorAll('button');
+            actionBtns.forEach(btn => {
+                btn.classList.remove('selected');
+                btn.style.background = 'rgba(255,255,255,0.15)';
+                btn.style.borderColor = 'transparent';
+                btn.style.transform = 'scale(1)';
+            });
+        }
+        
+        if (this.componentContainer) {
+            const compBtns = this.componentContainer.querySelectorAll('button');
+            compBtns.forEach(btn => {
+                btn.classList.remove('selected');
+                btn.style.background = 'rgba(255,255,255,0.1)';
+                btn.style.borderColor = 'rgba(255,255,255,0.2)';
+                btn.style.transform = 'scale(1)';
+                btn.style.opacity = '0.8';
+            });
+        }
+        
+        this.updatePreview();
+    }
+    
+    updatePreview() {
+        if (!this.previewElement) return;
+        
+        let parts = [];
+        
+        if (this.selectedAction) {
+            parts.push(this.selectedAction.template);
+        }
+        
+        if (this.selectedComponents.length > 0) {
+            const componentLabels = this.selectedComponents.map(id => {
+                const comp = this.availableComponents.find(c => c.id === id);
+                return comp ? comp.label.replace(/^[^\s]+\s/, '') : id; // Убираем эмодзи
+            });
+            parts.push(componentLabels.join(', '));
+        }
+        
+        if (parts.length === 0) {
+            this.previewElement.textContent = 'Select action →';
+            this.clearButton.style.display = 'none';
+        } else {
+            this.previewElement.textContent = parts.join(' ');
+            this.clearButton.style.display = 'block';
+        }
+    }
+    
+    getConstructedText() {
+        let parts = [];
+        
+        if (this.selectedAction) {
+            parts.push(this.selectedAction.template);
+        }
+        
+        if (this.selectedComponents.length > 0) {
+            const componentLabels = this.selectedComponents.map(id => {
+                const comp = this.availableComponents.find(c => c.id === id);
+                return comp ? comp.label.replace(/^[^\s]+\s/, '') : id;
+            });
+            parts.push(componentLabels.join(', '));
+        }
+        
+        return parts.join(' ');
+    }
+    
+    insertConstructedText() {
         if (!this.activeField) return;
+        
+        const text = this.getConstructedText();
+        if (!text || text === 'Выберите действие →') {
+            // Показываем предупреждение
+            const oldText = this.previewElement.textContent;
+            this.previewElement.textContent = '⚠️ Выберите действие!';
+            this.previewElement.style.color = '#ffcc00';
+            setTimeout(() => {
+                this.previewElement.textContent = oldText;
+                this.previewElement.style.color = 'white';
+            }, 1500);
+            return;
+        }
         
         const currentValue = this.activeField.value;
         const cursorPos = this.activeField.selectionStart;
         
+        // Добавляем точку в конце, если её нет
+        let finalText = text;
+        if (!finalText.endsWith('.') && !finalText.endsWith('!') && !finalText.endsWith('?')) {
+            finalText += '.';
+        }
+        
         const newValue = currentValue.substring(0, cursorPos) + 
                         (currentValue && cursorPos > 0 ? ' ' : '') + 
-                        text + 
+                        finalText + 
                         (cursorPos < currentValue.length ? ' ' : '') + 
                         currentValue.substring(cursorPos);
         
@@ -322,6 +717,16 @@ class QuickInputHelper {
         this.activeField.dispatchEvent(new Event('change', { bubbles: true }));
         this.activeField.focus();
         this.activeField.setSelectionRange(newValue.length, newValue.length);
+        
+        // Очищаем выбор после вставки
+        this.clearSelection();
+        
+        // Закрываем панель через 1.5 секунды
+        setTimeout(() => {
+            if (this.isPanelVisible()) {
+                this.hide();
+            }
+        }, 1500);
     }
     
     show(field, type) {
@@ -460,4 +865,4 @@ const observer = new MutationObserver(() => {
 });
 observer.observe(document.body, { childList: true, subtree: true });
 
-console.log('Quick Input: Модуль загружен! Панель меняет цвет вместе с темой');
+console.log('Quick Input: Конструктор предложений загружен!');
