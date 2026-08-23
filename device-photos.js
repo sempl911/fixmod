@@ -1,39 +1,20 @@
-// Модуль для отображения фото устройства в верхней панели
+// Module for displaying device photos in the top panel
 (function() {
-    console.log('📷 Device Photos: Script started');
+    console.log('Device Photos: Script started');
     
-    // ============================================================
-    // === STATE ===
-    // ============================================================
-    
+    // State
     let selectedPhotos = new Set();
-    let currentPreviewPanel = null;
-    let photoData = [];
-    let isPhotoViewerOpen = false;
+    let previewPhotoUrl = null;
+    let previewOverlay = null;
+    let currentPhotos = [];
+    let isPreviewOpen = false;
+    let isPanelOpen = false;
+    let currentTheme = 'default';
+    let totalPhotoCount = 0;
     
-    // ============================================================
-    // === COLOR SCHEMES ===
-    // ============================================================
-    
-    const colorSchemes = {
-        default: { c1: '#667eea', c2: '#764ba2' },
-        dark: { c1: '#1a1a2e', c2: '#16213e' },
-        green: { c1: '#11998e', c2: '#38ef7d' },
-        orange: { c1: '#f12711', c2: '#f5af19' },
-        blue: { c1: '#1e3c72', c2: '#2a5298' },
-        red: { c1: '#cb2d3e', c2: '#ef473a' },
-        teal: { c1: '#00b4db', c2: '#0083b0' },
-        gray1: { c1: '#ece9e6', c2: '#ffffff' },
-        gray2: { c1: '#4b4b4b', c2: '#2c2c2c' },
-        gray3: { c1: '#616161', c2: '#9e9e9e' },
-        gray4: { c1: '#3a3a3a', c2: '#1a1a1a' }
-    };
-    
-    // ============================================================
-    // === PHOTO FINDING FUNCTIONS ===
-    // ============================================================
-    
+    // Function to find photos
     function countPhotos() {
+        let photoCount = 0;
         let photoUrls = [];
         
         const fileButtons = document.querySelectorAll('.btn-group');
@@ -63,7 +44,9 @@
                                 }
                                 
                                 if (imageUrl && !photoUrls.includes(imageUrl)) {
+                                    photoCount++;
                                     photoUrls.push(imageUrl);
+                                    console.log('Found photo:', imageUrl);
                                 }
                             }
                         }
@@ -81,15 +64,19 @@
             if (text.toLowerCase().includes('.jpg') && (href || nav)) {
                 const url = href || nav;
                 if (url && !photoUrls.includes(url)) {
+                    photoCount++;
                     photoUrls.push(url);
+                    console.log('Found photo (alt):', url);
                 }
             }
         });
         
-        console.log(`📷 Device Photos: Found ${photoUrls.length} photos`);
-        return { count: photoUrls.length, urls: photoUrls };
+        console.log('Device Photos: Found photos:', photoCount);
+        totalPhotoCount = photoCount;
+        return { count: photoCount, urls: photoUrls };
     }
     
+    // Function to get direct URL (only for display, not for downloading)
     function getDirectImageUrl(url) {
         if (!url) return null;
         
@@ -106,292 +93,419 @@
     }
     
     // ============================================================
-    // === DOWNLOAD PHOTOS (через background) ===
+    // DOWNLOAD FUNCTION - SEND TO BACKGROUND
     // ============================================================
-    
     function downloadPhoto(url, filename) {
-        return new Promise((resolve) => {
-            try {
-                const directUrl = getDirectImageUrl(url);
-                if (!directUrl) {
-                    console.error('❌ Cannot get direct URL');
-                    resolve({ success: false, error: 'No direct URL' });
+        return new Promise((resolve, reject) => {
+            if (typeof chrome === 'undefined' || !chrome.runtime) {
+                reject(new Error('Chrome runtime not available'));
+                return;
+            }
+            
+            console.log('📤 Sending download request to background:', url);
+            
+            chrome.runtime.sendMessage({
+                type: 'DOWNLOAD_PHOTO',
+                url: url,
+                filename: filename || 'photo.jpg'
+            }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error('❌ Runtime error:', chrome.runtime.lastError);
+                    reject(new Error(chrome.runtime.lastError.message));
                     return;
                 }
                 
-                const finalFilename = filename || `photo_${Date.now()}.jpg`;
-                
-                // Отправляем запрос в background
-                if (typeof chrome !== 'undefined' && chrome.runtime) {
-                    chrome.runtime.sendMessage({
-                        type: 'DOWNLOAD_PHOTO',
-                        url: directUrl,
-                        filename: finalFilename
-                    }, (response) => {
-                        // Проверяем ответ
-                        if (response && response.success) {
-                            console.log('✅ Download started:', response.filename || finalFilename);
-                            resolve({ success: true, downloadId: response.downloadId });
-                        } else {
-                            const errorMsg = response?.error || 'Download failed';
-                            console.warn('⚠️ Download failed:', errorMsg);
-                            // Fallback: пробуем через ссылку
-                            try {
-                                const link = document.createElement('a');
-                                link.href = directUrl;
-                                link.download = finalFilename;
-                                link.target = '_blank';
-                                link.click();
-                                resolve({ success: true, fallback: true });
-                            } catch (e) {
-                                resolve({ success: false, error: errorMsg });
-                            }
-                        }
-                    });
+                if (response && response.success) {
+                    console.log('✅ Download started successfully');
+                    resolve(true);
                 } else {
-                    // Fallback: через ссылку
-                    try {
-                        const link = document.createElement('a');
-                        link.href = directUrl;
-                        link.download = finalFilename;
-                        link.target = '_blank';
-                        link.click();
-                        resolve({ success: true, fallback: true });
-                    } catch (e) {
-                        resolve({ success: false, error: e.message });
-                    }
+                    console.error('❌ Download failed:', response?.error || 'Unknown error');
+                    reject(new Error(response?.error || 'Download failed'));
                 }
-            } catch (error) {
-                console.error('❌ Download error:', error);
-                resolve({ success: false, error: error.message });
-            }
+            });
         });
     }
     
-    async function downloadSelectedPhotos() {
-        if (selectedPhotos.size === 0) {
-            showNotification('❌ Please select at least one photo to download', 'warning');
-            return;
-        }
-        
-        const selectedUrls = Array.from(selectedPhotos);
-        console.log(`📥 Downloading ${selectedUrls.length} photos...`);
-        
-        let successCount = 0;
-        let failCount = 0;
-        let downloadedNames = [];
-        
-        for (const url of selectedUrls) {
-            const urlParts = url.split('/');
-            let filename = urlParts[urlParts.length - 1].split('?')[0];
-            if (!filename || !filename.includes('.')) {
-                filename = `photo_${Date.now()}_${Math.random().toString(36).substr(2, 4)}.jpg`;
+    // ============================================================
+    // BATCH DOWNLOAD - SEND TO BACKGROUND
+    // ============================================================
+    function downloadMultiplePhotos(photos) {
+        return new Promise((resolve, reject) => {
+            if (typeof chrome === 'undefined' || !chrome.runtime) {
+                reject(new Error('Chrome runtime not available'));
+                return;
             }
             
-            const result = await downloadPhoto(url, filename);
-            if (result && result.success) {
-                successCount++;
-                if (result.filename || filename) {
-                    downloadedNames.push(result.filename || filename);
+            console.log('📤 Sending batch download request to background:', photos.length);
+            
+            chrome.runtime.sendMessage({
+                type: 'DOWNLOAD_MULTIPLE_PHOTOS',
+                photos: photos
+            }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error('❌ Runtime error:', chrome.runtime.lastError);
+                    reject(new Error(chrome.runtime.lastError.message));
+                    return;
                 }
-            } else {
-                failCount++;
-            }
-            await new Promise(resolve => setTimeout(resolve, 500));
-        }
-        
-        let message = `✅ Downloaded: ${successCount}`;
-        if (failCount > 0) {
-            message += ` ❌ Failed: ${failCount}`;
-        }
-        if (downloadedNames.length > 0 && downloadedNames.length <= 3) {
-            message += ` 📁 ${downloadedNames.join(', ')}`;
-        }
-        showNotification(message, failCount === 0 ? 'success' : 'warning');
-        
-        selectedPhotos.clear();
-        updatePreviewPanel(currentPreviewPanel, document.querySelector('.photo-thumb-container'));
+                
+                if (response && response.success) {
+                    console.log(`✅ Batch download: ${response.successful}/${response.total} successful`);
+                    resolve(response);
+                } else {
+                    console.error('❌ Batch download failed:', response?.error || 'Unknown error');
+                    reject(new Error(response?.error || 'Batch download failed'));
+                }
+            });
+        });
     }
     
-    // ============================================================
-    // === NOTIFICATIONS ===
-    // ============================================================
-    
-    function showNotification(message, type = 'success') {
-        const colors = {
-            success: '#34c759',
-            warning: '#ff9500',
-            error: '#ff3b30',
-            info: '#007aff'
-        };
-        
-        const notification = document.createElement('div');
-        notification.textContent = message;
-        notification.style.cssText = `
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background: ${colors[type] || '#34c759'};
-            color: white;
-            padding: 12px 20px;
-            border-radius: 10px;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            font-size: 13px;
-            font-weight: 500;
-            z-index: 999999;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.15);
-            animation: slideInRight 0.3s ease;
-            max-width: 350px;
-            pointer-events: none;
-        `;
-        document.body.appendChild(notification);
-        
-        setTimeout(() => {
-            notification.style.animation = 'fadeOut 0.3s ease forwards';
-            setTimeout(() => notification.remove(), 300);
-        }, 3000);
-    }
-    
-    // ============================================================
-    // === PHOTO VIEWER ===
-    // ============================================================
-    
-    function openPhotoViewer(url) {
+    // Open photo in fullscreen viewer
+    function openPhotoPreview(url) {
+        previewPhotoUrl = url;
+        isPreviewOpen = true;
         const directUrl = getDirectImageUrl(url);
-        if (!directUrl) {
-            showNotification('❌ Cannot open photo', 'error');
-            return;
+        
+        if (!previewOverlay) {
+            createPreviewOverlay();
         }
         
-        isPhotoViewerOpen = true;
+        const img = previewOverlay.querySelector('.preview-image');
+        if (img) {
+            img.src = directUrl;
+            img.style.display = 'none';
+        }
         
-        const overlay = document.createElement('div');
-        overlay.id = 'photo-viewer-overlay';
-        overlay.style.cssText = `
+        const loading = previewOverlay.querySelector('.preview-loading');
+        if (loading) {
+            loading.style.display = 'block';
+            loading.textContent = '⏳ Loading...';
+        }
+        
+        previewOverlay.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+    }
+    
+    // Create preview overlay
+    function createPreviewOverlay() {
+        previewOverlay = document.createElement('div');
+        previewOverlay.style.cssText = `
             position: fixed;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.92);
-            z-index: 9999999;
-            display: flex;
-            align-items: center;
+            background: rgba(0,0,0,0.85);
+            display: none;
             justify-content: center;
-            animation: fadeIn 0.25s ease;
+            align-items: center;
+            z-index: 999999;
         `;
         
-        const img = document.createElement('img');
-        img.src = directUrl;
-        img.style.cssText = `
-            max-width: 92%;
-            max-height: 92%;
-            object-fit: contain;
-            border-radius: 8px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
-            pointer-events: none;
+        const container = document.createElement('div');
+        container.style.cssText = `
+            position: relative;
+            max-width: 90%;
+            max-height: 90%;
+            cursor: default;
         `;
         
-        const closeBtn = document.createElement('button');
-        closeBtn.textContent = '✕';
-        closeBtn.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 30px;
-            background: rgba(255,255,255,0.15);
-            border: none;
-            border-radius: 50%;
+        const loading = document.createElement('div');
+        loading.className = 'preview-loading';
+        loading.style.cssText = `
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
             color: white;
             font-size: 24px;
-            width: 50px;
-            height: 50px;
+            z-index: 1;
+        `;
+        loading.textContent = '⏳ Loading...';
+        container.appendChild(loading);
+        
+        const img = document.createElement('img');
+        img.className = 'preview-image';
+        img.style.cssText = `
+            max-width: 100%;
+            max-height: 85vh;
+            border-radius: 8px;
+            box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+            display: none;
+            object-fit: contain;
+            position: relative;
+            z-index: 2;
+        `;
+        img.onload = () => {
+            const loadingEl = container.querySelector('.preview-loading');
+            if (loadingEl) loadingEl.style.display = 'none';
+            img.style.display = 'block';
+        };
+        img.onerror = () => {
+            const loadingEl = container.querySelector('.preview-loading');
+            if (loadingEl) {
+                loadingEl.textContent = '❌ Error loading';
+                loadingEl.style.color = '#ff6b6b';
+            }
+        };
+        container.appendChild(img);
+        
+        // Close button
+        const closeBtn = document.createElement('div');
+        closeBtn.style.cssText = `
+            position: absolute;
+            top: -40px;
+            right: -40px;
+            color: white;
+            font-size: 30px;
             cursor: pointer;
-            transition: background 0.2s;
+            background: rgba(0,0,0,0.5);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
             display: flex;
             align-items: center;
             justify-content: center;
-            z-index: 10000000;
+            transition: background 0.2s;
+            z-index: 3;
         `;
-        closeBtn.onmouseenter = () => closeBtn.style.background = 'rgba(255,255,255,0.3)';
-        closeBtn.onmouseleave = () => closeBtn.style.background = 'rgba(255,255,255,0.15)';
+        closeBtn.textContent = '✕';
+        closeBtn.onmouseenter = () => {
+            closeBtn.style.background = 'rgba(255,0,0,0.6)';
+        };
+        closeBtn.onmouseleave = () => {
+            closeBtn.style.background = 'rgba(0,0,0,0.5)';
+        };
         closeBtn.onclick = (e) => {
             e.stopPropagation();
-            closePhotoViewer(overlay);
+            closePreview();
         };
+        container.appendChild(closeBtn);
         
-        overlay.onclick = (e) => {
-            if (e.target === overlay) {
-                closePhotoViewer(overlay);
+        // Download button in viewer with theme support
+        const downloadBtn = document.createElement('div');
+        downloadBtn.id = 'preview-download-btn';
+        downloadBtn.style.cssText = `
+            position: absolute;
+            bottom: -50px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            padding: 10px 24px;
+            border-radius: 8px;
+            transition: all 0.2s;
+            z-index: 3;
+            border: none;
+            font-weight: bold;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        `;
+        downloadBtn.textContent = '⬇️ Download photo';
+        downloadBtn.onmouseenter = () => {
+            downloadBtn.style.transform = 'translateX(-50%) scale(1.05)';
+            downloadBtn.style.boxShadow = '0 4px 15px rgba(0,0,0,0.3)';
+        };
+        downloadBtn.onmouseleave = () => {
+            downloadBtn.style.transform = 'translateX(-50%) scale(1)';
+            downloadBtn.style.boxShadow = 'none';
+        };
+        downloadBtn.onclick = async (e) => {
+            e.stopPropagation();
+            if (previewPhotoUrl) {
+                const btn = e.target;
+                const originalText = btn.textContent;
+                btn.textContent = '⏳ Downloading...';
+                btn.style.opacity = '0.7';
+                btn.style.pointerEvents = 'none';
+                
+                try {
+                    await downloadPhoto(previewPhotoUrl, `photo_${Date.now()}.jpg`);
+                    btn.textContent = '✅ Downloaded!';
+                    btn.style.opacity = '1';
+                    btn.style.pointerEvents = 'auto';
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                    }, 2000);
+                } catch (error) {
+                    console.error('Download error:', error);
+                    btn.textContent = '❌ Failed';
+                    btn.style.opacity = '1';
+                    btn.style.pointerEvents = 'auto';
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                    }, 2000);
+                }
+            }
+        };
+        container.appendChild(downloadBtn);
+        
+        previewOverlay.appendChild(container);
+        
+        // Close only on background click (not on container)
+        previewOverlay.onclick = (e) => {
+            if (e.target === previewOverlay) {
+                closePreviewOnly();
             }
         };
         
-        const escHandler = function(e) {
-            if (e.key === 'Escape') {
-                closePhotoViewer(overlay);
-                document.removeEventListener('keydown', escHandler);
+        // Close on Escape
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && previewOverlay.style.display === 'flex') {
+                closePreviewOnly();
             }
-        };
-        document.addEventListener('keydown', escHandler);
+        });
         
-        overlay.appendChild(img);
-        overlay.appendChild(closeBtn);
-        document.body.appendChild(overlay);
+        document.body.appendChild(previewOverlay);
         
-        if (!document.getElementById('photo-viewer-styles')) {
-            const style = document.createElement('style');
-            style.id = 'photo-viewer-styles';
-            style.textContent = `
-                @keyframes fadeIn {
-                    from { opacity: 0; transform: scale(0.95); }
-                    to { opacity: 1; transform: scale(1); }
-                }
-                @keyframes fadeOut {
-                    from { opacity: 1; }
-                    to { opacity: 0; }
-                }
-            `;
-            document.head.appendChild(style);
+        // Apply current theme to download button
+        applyThemeToPreviewButton(currentTheme);
+    }
+    
+    // Apply theme to preview download button
+    function applyThemeToPreviewButton(themeId) {
+        const downloadBtn = document.getElementById('preview-download-btn');
+        if (!downloadBtn) return;
+        
+        const colors = colorSchemes[themeId];
+        if (!colors) return;
+        
+        const gradient = `linear-gradient(135deg, ${colors.c1} 0%, ${colors.c2} 100%)`;
+        downloadBtn.style.background = gradient;
+    }
+    
+    // Close only the fullscreen preview, keep panel open
+    function closePreviewOnly() {
+        if (previewOverlay) {
+            previewOverlay.style.display = 'none';
+            document.body.style.overflow = '';
+            previewPhotoUrl = null;
+            isPreviewOpen = false;
+            
+            const img = previewOverlay.querySelector('.preview-image');
+            if (img) {
+                img.src = '';
+                img.style.display = 'none';
+            }
         }
     }
     
-    function closePhotoViewer(overlay) {
-        if (!overlay) {
-            overlay = document.getElementById('photo-viewer-overlay');
-        }
-        if (overlay) {
-            overlay.style.animation = 'fadeOut 0.2s ease forwards';
-            setTimeout(() => {
-                overlay.remove();
-                isPhotoViewerOpen = false;
-            }, 200);
+    // Close preview (kept for compatibility)
+    function closePreview() {
+        closePreviewOnly();
+    }
+    
+    // Toggle photo selection
+    function togglePhotoSelection(url) {
+        if (selectedPhotos.has(url)) {
+            selectedPhotos.delete(url);
         } else {
-            isPhotoViewerOpen = false;
+            selectedPhotos.add(url);
+        }
+        updateSelectionUI();
+        updateDownloadButton();
+    }
+    
+    // Update selection UI
+    function updateSelectionUI() {
+        document.querySelectorAll('.photo-checkbox').forEach(cb => {
+            const url = cb.dataset.url;
+            cb.checked = selectedPhotos.has(url);
+        });
+        
+        updateDownloadButton();
+    }
+    
+    // Update download button
+    function updateDownloadButton() {
+        const downloadBtn = document.getElementById('photo-download-btn');
+        const downloadBtnBottom = document.getElementById('photo-download-btn-bottom');
+        const count = selectedPhotos.size;
+        
+        const btns = [downloadBtn, downloadBtnBottom];
+        btns.forEach(btn => {
+            if (btn) {
+                if (count > 0) {
+                    btn.style.display = 'flex';
+                    btn.innerHTML = `⬇️ Download (${count})`;
+                } else {
+                    btn.style.display = 'none';
+                }
+            }
+        });
+    }
+    
+    // Download selected photos
+    async function downloadSelectedPhotos() {
+        const urls = Array.from(selectedPhotos);
+        if (urls.length === 0) return;
+        
+        const btns = ['photo-download-btn', 'photo-download-btn-bottom'];
+        btns.forEach(id => {
+            const btn = document.getElementById(id);
+            if (btn) {
+                btn.textContent = '⏳ Downloading...';
+                btn.style.opacity = '0.7';
+                btn.style.pointerEvents = 'none';
+            }
+        });
+        
+        try {
+            // Prepare photos array for batch download
+            const photos = urls.map((url, index) => ({
+                url: url,
+                filename: `photo_${index + 1}_${Date.now()}.jpg`
+            }));
+            
+            const result = await downloadMultiplePhotos(photos);
+            
+            console.log(`✅ Downloaded ${result.successful} of ${result.total} photos`);
+            
+            if (result.successful === result.total) {
+                selectedPhotos.clear();
+                updateSelectionUI();
+                updateDownloadButton();
+            } else if (result.successful > 0) {
+                // Some succeeded, clear all selection
+                selectedPhotos.clear();
+                updateSelectionUI();
+                updateDownloadButton();
+            }
+            
+        } catch (error) {
+            console.error('Batch download error:', error);
+        } finally {
+            btns.forEach(id => {
+                const btn = document.getElementById(id);
+                if (btn) {
+                    btn.textContent = '⬇️ Download';
+                    btn.style.opacity = '1';
+                    btn.style.pointerEvents = 'auto';
+                    btn.style.display = 'none';
+                }
+            });
         }
     }
     
-    // ============================================================
-    // === UPDATE PREVIEW PANEL ===
-    // ============================================================
-    
+    // Update preview panel
     function updatePreviewPanel(previewPanel, thumbContainer) {
-        if (!previewPanel || !thumbContainer) return;
-        
         const result = countPhotos();
         const count = result.count;
         const photos = result.urls;
-        photoData = photos;
-        
-        const countSpan = document.getElementById('nav-photo-count');
-        if (countSpan) countSpan.textContent = count;
+        currentPhotos = photos;
+        totalPhotoCount = count;
         
         const panelHeader = previewPanel.querySelector('.panel-header-text');
-        if (panelHeader) panelHeader.textContent = `📷 Device photos (${count})`;
-        
-        const downloadBtn = document.getElementById('download-selected-btn');
-        if (downloadBtn) {
-            downloadBtn.textContent = `⬇️ Download (${selectedPhotos.size})`;
-            downloadBtn.disabled = selectedPhotos.size === 0;
+        if (panelHeader) {
+            panelHeader.textContent = `📷 Device Photos (${count})`;
         }
+        
+        // Update main counter in navbar
+        const countSpan = document.getElementById('nav-photo-count');
+        if (countSpan) {
+            countSpan.textContent = count;
+        }
+        
+        updateDownloadButton();
         
         thumbContainer.innerHTML = '';
         
@@ -399,145 +513,168 @@
             thumbContainer.innerHTML = '<div style="color:white; text-align:center; grid-column:span 3; padding:20px;">No photos</div>';
         } else {
             photos.forEach((photo, index) => {
-                const thumbItem = createThumbnail(photo, index);
+                const thumbItem = document.createElement('div');
+                thumbItem.style.cssText = `
+                    background: rgba(255,255,255,0.15);
+                    border-radius: 8px;
+                    overflow: hidden;
+                    position: relative;
+                    transition: transform 0.2s;
+                    aspect-ratio: 1 / 1;
+                `;
+                
+                const overlay = document.createElement('div');
+                overlay.style.cssText = `
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: flex-start;
+                    padding: 6px;
+                    z-index: 2;
+                    pointer-events: none;
+                `;
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'photo-checkbox';
+                checkbox.dataset.url = photo;
+                checkbox.checked = selectedPhotos.has(photo);
+                checkbox.style.cssText = `
+                    pointer-events: auto;
+                    cursor: pointer;
+                    width: 18px;
+                    height: 18px;
+                    accent-color: #4CAF50;
+                    background: rgba(255,255,255,0.8);
+                    border-radius: 4px;
+                    border: 2px solid white;
+                    z-index: 3;
+                `;
+                checkbox.onchange = (e) => {
+                    e.stopPropagation();
+                    togglePhotoSelection(photo);
+                };
+                
+                // Fullscreen button with custom icon from uiAssets
+                const viewBtn = document.createElement('img');
+                viewBtn.src = chrome.runtime.getURL('uiAssets/full-size.png');
+                viewBtn.style.cssText = `
+                    pointer-events: auto;
+                    cursor: pointer;
+                    width: 28px;
+                    height: 28px;
+                    filter: brightness(0) invert(1);
+                    z-index: 3;
+                    background: rgba(0,0,0,0.6);
+                    border-radius: 50%;
+                    padding: 4px;
+                    border: 2px solid rgba(255,255,255,0.3);
+                    transition: all 0.2s;
+                    object-fit: contain;
+                `;
+                viewBtn.title = 'Fullscreen view';
+                
+                // Fallback if icon fails to load
+                viewBtn.onerror = function() {
+                    this.style.display = 'none';
+                    const fallback = document.createElement('span');
+                    fallback.textContent = '⛶';
+                    fallback.style.cssText = `
+                        pointer-events: auto;
+                        cursor: pointer;
+                        color: white;
+                        font-size: 18px;
+                        font-weight: bold;
+                        z-index: 3;
+                        background: rgba(0,0,0,0.6);
+                        border-radius: 50%;
+                        width: 28px;
+                        height: 28px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        border: 2px solid rgba(255,255,255,0.3);
+                        transition: all 0.2s;
+                        user-select: none;
+                    `;
+                    this.parentNode.replaceChild(fallback, this);
+                };
+                
+                viewBtn.onmouseenter = () => {
+                    viewBtn.style.background = 'rgba(255,255,255,0.3)';
+                    viewBtn.style.transform = 'scale(1.1)';
+                };
+                viewBtn.onmouseleave = () => {
+                    viewBtn.style.background = 'rgba(0,0,0,0.6)';
+                    viewBtn.style.transform = 'scale(1)';
+                };
+                viewBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    openPhotoPreview(photo);
+                };
+                
+                overlay.appendChild(checkbox);
+                overlay.appendChild(viewBtn);
+                thumbItem.appendChild(overlay);
+                
+                const thumb = document.createElement('div');
+                thumb.style.cssText = `
+                    width: 100%;
+                    height: 100%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    background: rgba(0,0,0,0.3);
+                `;
+                
+                const img = document.createElement('img');
+                const directUrl = getDirectImageUrl(photo);
+                img.src = directUrl;
+                img.style.cssText = `
+                    width: 100%;
+                    height: 100%;
+                    object-fit: cover;
+                `;
+                img.loading = 'lazy';
+                img.onerror = () => {
+                    img.style.display = 'none';
+                    const placeholder = document.createElement('span');
+                    placeholder.innerHTML = '📷';
+                    placeholder.style.cssText = 'font-size: 24px; color: rgba(255,255,255,0.5);';
+                    thumb.appendChild(placeholder);
+                };
+                
+                thumb.onclick = () => openPhotoPreview(photo);
+                thumb.style.cursor = 'pointer';
+                
+                thumb.appendChild(img);
+                thumbItem.appendChild(thumb);
                 thumbContainer.appendChild(thumbItem);
             });
         }
     }
     
-    function createThumbnail(photo, index) {
-        const container = document.createElement('div');
-        container.style.cssText = `
-            background: rgba(255,255,255,0.1);
-            border-radius: 8px;
-            overflow: hidden;
-            position: relative;
-            transition: transform 0.2s, box-shadow 0.2s;
-            aspect-ratio: 1 / 1;
-            border: 2px solid transparent;
-        `;
-        container.className = 'photo-thumb-item';
-        
-        // Checkbox (top-left)
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.style.cssText = `
-            position: absolute;
-            top: 4px;
-            left: 4px;
-            z-index: 2;
-            width: 18px;
-            height: 18px;
-            cursor: pointer;
-            opacity: 0.8;
-        `;
-        checkbox.checked = selectedPhotos.has(photo);
-        checkbox.onchange = (e) => {
-            e.stopPropagation();
-            if (checkbox.checked) {
-                selectedPhotos.add(photo);
-            } else {
-                selectedPhotos.delete(photo);
-            }
-            const downloadBtn = document.getElementById('download-selected-btn');
-            if (downloadBtn) {
-                downloadBtn.textContent = `⬇️ Download (${selectedPhotos.size})`;
-                downloadBtn.disabled = selectedPhotos.size === 0;
-            }
-            container.style.borderColor = checkbox.checked ? '#4CAF50' : 'transparent';
-            container.style.boxShadow = checkbox.checked ? '0 0 10px rgba(76, 175, 80, 0.5)' : 'none';
-        };
-        container.appendChild(checkbox);
-        
-        // View button (bottom-right) - ⬈
-        const viewBtn = document.createElement('button');
-        viewBtn.textContent = '⬈';
-        viewBtn.style.cssText = `
-            position: absolute;
-            bottom: 4px;
-            right: 4px;
-            z-index: 2;
-            background: rgba(0,0,0,0.6);
-            border: none;
-            border-radius: 50%;
-            color: white;
-            width: 28px;
-            height: 28px;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: bold;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s;
-            opacity: 0;
-            backdrop-filter: blur(4px);
-        `;
-        viewBtn.title = 'View full size';
-        viewBtn.onmouseenter = () => {
-            viewBtn.style.background = 'rgba(102, 126, 234, 0.8)';
-            viewBtn.style.transform = 'scale(1.1)';
-        };
-        viewBtn.onmouseleave = () => {
-            viewBtn.style.background = 'rgba(0,0,0,0.6)';
-            viewBtn.style.transform = 'scale(1)';
-        };
-        viewBtn.onclick = (e) => {
-            e.stopPropagation();
-            openPhotoViewer(photo);
-        };
-        container.appendChild(viewBtn);
-        
-        container.onmouseenter = () => {
-            viewBtn.style.opacity = '1';
-            container.style.transform = 'scale(1.02)';
-        };
-        container.onmouseleave = () => {
-            viewBtn.style.opacity = '0';
-            container.style.transform = 'scale(1)';
-        };
-        
-        const thumb = document.createElement('div');
-        thumb.style.cssText = `
-            width: 100%;
-            height: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: rgba(0,0,0,0.3);
-        `;
-        
-        const img = document.createElement('img');
-        const directUrl = getDirectImageUrl(photo);
-        img.src = directUrl;
-        img.style.cssText = `
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        `;
-        img.onerror = () => {
-            img.style.display = 'none';
-            const placeholder = document.createElement('span');
-            placeholder.textContent = `📷 ${index + 1}`;
-            placeholder.style.cssText = 'font-size: 16px; color: rgba(255,255,255,0.5);';
-            thumb.appendChild(placeholder);
-        };
-        
-        thumb.onclick = (e) => {
-            if (!e.target.closest('input[type="checkbox"]') && !e.target.closest('button')) {
-                openPhotoViewer(photo);
-            }
-        };
-        
-        thumb.appendChild(img);
-        container.appendChild(thumb);
-        
-        return container;
-    }
+    // Color schemes
+    const colorSchemes = {
+        default: { c1: '#667eea', c2: '#764ba2' },
+        dark: { c1: '#1a1a2e', c2: '#16213e' },
+        green: { c1: '#11998e', c2: '#38ef7d' },
+        orange: { c1: '#f12711', c2: '#f5af19' },
+        blue: { c1: '#1e3c72', c2: '#2a5298' },
+        red: { c1: '#cb2d3e', c2: '#ef473a' },
+        teal: { c1: '#00b4db', c2: '#0083b0' },
+        gray1: { c1: '#ece9e6', c2: '#ffffff' },
+        gray2: { c1: '#4b4b4b', c2: '#2c2c2c' },
+        gray3: { c1: '#616161', c2: '#9e9e9e' },
+        gray4: { c1: '#3a3a3a', c2: '#1a1a1a' }
+    };
     
-    // ============================================================
-    // === THEMES ===
-    // ============================================================
+    let currentPreviewPanel = null;
+    let updateInterval = null;
     
     function applyThemeToPhotoPanel(themeId) {
         if (!currentPreviewPanel) return;
@@ -545,19 +682,20 @@
         if (!colors) return;
         const gradient = `linear-gradient(135deg, ${colors.c1} 0%, ${colors.c2} 100%)`;
         currentPreviewPanel.style.background = gradient;
+        currentTheme = themeId;
+        
+        applyThemeToPreviewButton(themeId);
     }
     
     function loadSavedThemeForPhotos() {
         const savedTheme = localStorage.getItem('widgetTheme');
         if (savedTheme && colorSchemes[savedTheme]) {
             applyThemeToPhotoPanel(savedTheme);
+            currentTheme = savedTheme;
         }
     }
     
-    // ============================================================
-    // === INJECT INTO NAVBAR ===
-    // ============================================================
-    
+    // Function to inject indicator into navbar
     function injectIntoNavbar() {
         const navbarUpper = document.querySelector('.navbar-upper .navbar-upper-collapse');
         const navbarRight = document.querySelector('.navbar-upper-right');
@@ -571,6 +709,7 @@
         
         const result = countPhotos();
         const count = result.count;
+        totalPhotoCount = count;
         
         const indicatorContainer = document.createElement('li');
         indicatorContainer.id = 'nav-photo-indicator';
@@ -599,8 +738,6 @@
             <span id="nav-photo-count">${count}</span>
             <span style="font-size: 10px;">▼</span>
         `;
-        indicatorBtn.onmouseenter = () => indicatorBtn.style.background = 'rgba(255,255,255,0.25)';
-        indicatorBtn.onmouseleave = () => indicatorBtn.style.background = 'rgba(255,255,255,0.15)';
         
         const previewPanel = document.createElement('div');
         previewPanel.style.cssText = `
@@ -614,7 +751,7 @@
             padding: 12px;
             display: none;
             z-index: 10000;
-            min-width: 360px;
+            min-width: 340px;
             max-width: 420px;
         `;
         
@@ -632,43 +769,30 @@
             justify-content: space-between;
             align-items: center;
             flex-wrap: wrap;
-            gap: 8px;
+            gap: 6px;
         `;
         panelHeader.innerHTML = `
-            <span class="panel-header-text">📷 Device photos (${count})</span>
-            <div style="display:flex; gap:6px;">
-                <button id="download-selected-btn" style="
-                    background: #4CAF50;
-                    border: none;
-                    border-radius: 6px;
+            <span class="panel-header-text">📷 Device Photos (${count})</span>
+            <div style="display:flex; align-items:center; gap:8px;">
+                <button id="photo-download-btn" style="
+                    display: none;
+                    align-items: center;
+                    gap: 4px;
+                    padding: 4px 10px;
+                    background: rgba(255,255,255,0.2);
+                    border: 1px solid rgba(255,255,255,0.3);
+                    border-radius: 12px;
                     color: white;
-                    padding: 5px 14px;
-                    font-size: 12px;
-                    font-weight: bold;
+                    font-size: 11px;
                     cursor: pointer;
                     transition: all 0.2s;
-                    box-shadow: 0 2px 8px rgba(76, 175, 80, 0.3);
-                ">⬇️ Download (0)</button>
-                <button id="close-photo-preview" style="
-                    background: rgba(255,255,255,0.1);
-                    border: none;
-                    border-radius: 50%;
-                    color: white;
-                    width: 28px;
-                    height: 28px;
-                    cursor: pointer;
-                    font-size: 14px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    transition: background 0.2s;
-                ">✕</button>
+                ">⬇️ Download</button>
+                <span id="close-photo-preview" style="cursor: pointer; font-size: 16px;">✕</span>
             </div>
         `;
         previewPanel.appendChild(panelHeader);
         
         const thumbContainer = document.createElement('div');
-        thumbContainer.className = 'photo-thumb-container';
         thumbContainer.style.cssText = `
             display: grid;
             grid-template-columns: repeat(3, 1fr);
@@ -679,82 +803,24 @@
         `;
         previewPanel.appendChild(thumbContainer);
         
-        const actionsRow = document.createElement('div');
-        actionsRow.style.cssText = `
+        const downloadAllBtn = document.createElement('button');
+        downloadAllBtn.id = 'photo-download-btn-bottom';
+        downloadAllBtn.style.cssText = `
+            display: none;
+            width: 100%;
             margin-top: 10px;
-            padding-top: 8px;
-            border-top: 1px solid rgba(255,255,255,0.2);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 8px;
-            flex-wrap: wrap;
-        `;
-        
-        const selectAllBtn = document.createElement('button');
-        selectAllBtn.textContent = '☑️ Select all';
-        selectAllBtn.style.cssText = `
-            background: rgba(255,255,255,0.15);
-            border: 1px solid rgba(255,255,255,0.25);
-            border-radius: 6px;
+            padding: 8px;
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 8px;
             color: white;
-            padding: 6px 14px;
-            font-size: 11px;
-            font-weight: 500;
+            font-size: 13px;
             cursor: pointer;
             transition: all 0.2s;
         `;
-        selectAllBtn.onmouseenter = () => {
-            selectAllBtn.style.background = 'rgba(255,255,255,0.3)';
-            selectAllBtn.style.transform = 'scale(1.03)';
-        };
-        selectAllBtn.onmouseleave = () => {
-            selectAllBtn.style.background = 'rgba(255,255,255,0.15)';
-            selectAllBtn.style.transform = 'scale(1)';
-        };
-        selectAllBtn.onclick = () => {
-            if (photoData.length === 0) return;
-            
-            const allSelected = photoData.every(p => selectedPhotos.has(p));
-            
-            if (allSelected) {
-                selectedPhotos.clear();
-            } else {
-                photoData.forEach(p => selectedPhotos.add(p));
-            }
-            
-            updatePreviewPanel(previewPanel, thumbContainer);
-        };
-        actionsRow.appendChild(selectAllBtn);
-        
-        const clearSelectionBtn = document.createElement('button');
-        clearSelectionBtn.textContent = '🗑️ Clear';
-        clearSelectionBtn.style.cssText = `
-            background: rgba(255,255,255,0.1);
-            border: 1px solid rgba(255,255,255,0.15);
-            border-radius: 6px;
-            color: white;
-            padding: 6px 14px;
-            font-size: 11px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.2s;
-        `;
-        clearSelectionBtn.onmouseenter = () => {
-            clearSelectionBtn.style.background = 'rgba(255,255,255,0.2)';
-            clearSelectionBtn.style.transform = 'scale(1.03)';
-        };
-        clearSelectionBtn.onmouseleave = () => {
-            clearSelectionBtn.style.background = 'rgba(255,255,255,0.1)';
-            clearSelectionBtn.style.transform = 'scale(1)';
-        };
-        clearSelectionBtn.onclick = () => {
-            selectedPhotos.clear();
-            updatePreviewPanel(previewPanel, thumbContainer);
-        };
-        actionsRow.appendChild(clearSelectionBtn);
-        
-        previewPanel.appendChild(actionsRow);
+        downloadAllBtn.textContent = '⬇️ Download selected';
+        downloadAllBtn.onclick = downloadSelectedPhotos;
+        previewPanel.appendChild(downloadAllBtn);
         
         indicatorContainer.appendChild(indicatorBtn);
         indicatorContainer.appendChild(previewPanel);
@@ -762,17 +828,18 @@
         navbarUpper.insertBefore(indicatorContainer, navbarRight);
         
         loadSavedThemeForPhotos();
-        updatePreviewPanel(previewPanel, thumbContainer);
         
-        let isOpen = false;
-        let updateInterval = null;
+        const downloadBtn = document.getElementById('photo-download-btn');
+        if (downloadBtn) {
+            downloadBtn.onclick = downloadSelectedPhotos;
+        }
         
         indicatorBtn.onclick = (e) => {
             e.preventDefault();
             e.stopPropagation();
-            if (isOpen) {
+            if (isPanelOpen) {
                 previewPanel.style.display = 'none';
-                isOpen = false;
+                isPanelOpen = false;
                 if (updateInterval) {
                     clearInterval(updateInterval);
                     updateInterval = null;
@@ -780,41 +847,22 @@
             } else {
                 updatePreviewPanel(previewPanel, thumbContainer);
                 previewPanel.style.display = 'block';
-                isOpen = true;
+                isPanelOpen = true;
                 
                 if (updateInterval) clearInterval(updateInterval);
                 updateInterval = setInterval(() => {
-                    if (isOpen) {
+                    if (isPanelOpen) {
                         updatePreviewPanel(previewPanel, thumbContainer);
                     }
                 }, 3000);
             }
         };
         
-        const downloadBtn = document.getElementById('download-selected-btn');
-        if (downloadBtn) {
-            downloadBtn.onmouseenter = () => {
-                downloadBtn.style.background = '#66bb6a';
-                downloadBtn.style.transform = 'scale(1.05)';
-            };
-            downloadBtn.onmouseleave = () => {
-                downloadBtn.style.background = '#4CAF50';
-                downloadBtn.style.transform = 'scale(1)';
-            };
-            downloadBtn.onclick = (e) => {
-                e.stopPropagation();
-                downloadSelectedPhotos();
-            };
-        }
-        
         const closeBtn = document.getElementById('close-photo-preview');
         if (closeBtn) {
-            closeBtn.onmouseenter = () => closeBtn.style.background = 'rgba(255,255,255,0.2)';
-            closeBtn.onmouseleave = () => closeBtn.style.background = 'rgba(255,255,255,0.1)';
-            closeBtn.onclick = (e) => {
-                e.stopPropagation();
+            closeBtn.onclick = () => {
                 previewPanel.style.display = 'none';
-                isOpen = false;
+                isPanelOpen = false;
                 if (updateInterval) {
                     clearInterval(updateInterval);
                     updateInterval = null;
@@ -823,11 +871,9 @@
         }
         
         document.addEventListener('click', (e) => {
-            if (isPhotoViewerOpen) return;
-            
-            if (isOpen && !indicatorContainer.contains(e.target)) {
+            if (isPanelOpen && !indicatorContainer.contains(e.target) && !previewOverlay?.contains(e.target)) {
                 previewPanel.style.display = 'none';
-                isOpen = false;
+                isPanelOpen = false;
                 if (updateInterval) {
                     clearInterval(updateInterval);
                     updateInterval = null;
@@ -835,18 +881,15 @@
             }
         });
         
-        console.log('📷 Device Photos: Indicator injected');
+        console.log('Device Photos: Indicator injected');
     }
     
-    // ============================================================
-    // === STARTUP ===
-    // ============================================================
-    
+    // Wait for content to load
     function waitForContent() {
         const checkInterval = setInterval(() => {
             const fileMenu = document.querySelector('.btn-group .dropdown-menu li a[href*=".jpg"]');
             if (fileMenu) {
-                console.log('📷 Device Photos: Content loaded');
+                console.log('Device Photos: Content loaded');
                 clearInterval(checkInterval);
                 injectIntoNavbar();
             }
@@ -873,8 +916,17 @@
             const countSpan = document.getElementById('nav-photo-count');
             if (countSpan) {
                 const newCount = countPhotos().count;
-                if (newCount !== parseInt(countSpan.textContent)) {
+                const current = parseInt(countSpan.textContent);
+                if (current !== newCount) {
                     countSpan.textContent = newCount;
+                    totalPhotoCount = newCount;
+                    
+                    if (currentPreviewPanel) {
+                        const header = currentPreviewPanel.querySelector('.panel-header-text');
+                        if (header) {
+                            header.textContent = `📷 Device Photos (${newCount})`;
+                        }
+                    }
                 }
             }
         }, 1000);
@@ -888,12 +940,11 @@
         chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             if (request.type === 'UPDATE_THEME') {
                 applyThemeToPhotoPanel(request.theme);
+                currentTheme = request.theme;
                 sendResponse({ success: true });
             }
             return true;
         });
     }
-    
-    console.log('📷 Device Photos: Module loaded!');
     
 })();
