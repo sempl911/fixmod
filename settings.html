@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>FixMod - Settings</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        /* ===== СВЕТЛАЯ ТЕМА ===== */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #e8eaed;
+            padding: 24px;
+            max-width: 480px;
+            margin: 0 auto;
+            min-height: 100vh;
+            color: #1a1a2e;
+            transition: background 0.3s, color 0.3s;
+        }
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            padding: 14px 18px;
+            border-radius: 10px;
+            background: #d1d5db;
+            transition: background 0.3s;
+        }
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .header-left img {
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+        }
+        .header-left h1 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1a1a2e;
+            transition: color 0.3s;
+        }
+        .back-link {
+            color: #1a1a2e;
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            opacity: 0.6;
+            transition: opacity 0.2s;
+        }
+        .back-link:hover { opacity: 1; }
+
+        .section {
+            background: #ffffff;
+            border-radius: 10px;
+            padding: 18px;
+            margin-bottom: 14px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+            border: 1px solid #d1d5db;
+            transition: background 0.3s, border-color 0.3s;
+        }
+        .section-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #1a1a2e;
+            margin-bottom: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: color 0.3s;
+        }
+        .setting-group { margin-bottom: 14px; }
+        .setting-group:last-child { margin-bottom: 0; }
+        .setting-label {
+            display: block;
+            font-size: 13px;
+            font-weight: 500;
+            color: #1a1a2e;
+            margin-bottom: 4px;
+            transition: color 0.3s;
+        }
+        .setting-description {
+            font-size: 12px;
+            color: #6b7280;
+            margin-bottom: 6px;
+            transition: color 0.3s;
+        }
+
+        .toggle-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 0;
+        }
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 48px;
+            height: 26px;
+            flex-shrink: 0;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #c4c6cc;
+            transition: 0.3s;
+            border-radius: 26px;
+        }
+        .toggle-slider:before {
+            position: absolute;
+            content: "☀️";
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
+            font-size: 11px;
+        }
+        input:checked + .toggle-slider {
+            background-color: #393F49;
+        }
+        input:checked + .toggle-slider:before {
+            transform: translateX(22px);
+            content: "🌙";
+        }
+
+        .toggle-label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+            font-weight: 500;
+            color: #1a1a2e;
+            transition: color 0.3s;
+        }
+        .toggle-label .icon { font-size: 18px; }
+
+        .range-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .range-row input[type="range"] {
+            flex: 1;
+            height: 4px;
+            -webkit-appearance: none;
+            background: #d1d5db;
+            border-radius: 4px;
+            padding: 0;
+        }
+        .range-row input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #393F49;
+            cursor: pointer;
+        }
+        .range-value {
+            font-size: 14px;
+            font-weight: 600;
+            color: #1a1a2e;
+            min-width: 40px;
+            text-align: center;
+            transition: color 0.3s;
+        }
+
+        .btn {
+            padding: 8px 18px;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+            font-family: inherit;
+        }
+        .btn-primary {
+            background: #393F49;
+            color: white;
+        }
+        .btn-primary:hover { background: #2c313a; }
+        .btn-success { background: #34c759; color: white; }
+        .btn-success:hover { background: #2db84e; }
+        .btn-danger { background: #ff3b30; color: white; }
+        .btn-danger:hover { background: #e6352a; }
+        .btn-secondary { background: #e5e7eb; color: #1a1a2e; }
+        .btn-secondary:hover { background: #d1d5db; }
+        .btn-warning { background: #ff9500; color: white; }
+        .btn-warning:hover { background: #e68600; }
+
+        .btn-group {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .btn-group .btn { flex: 1; min-width: 80px; }
+
+        .data-stats {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 0;
+            border-bottom: 1px solid #e5e7eb;
+            transition: border-color 0.3s;
+        }
+        .data-stats:last-child { border-bottom: none; }
+        .data-stats .number {
+            font-size: 20px;
+            font-weight: 700;
+            color: #393F49;
+            transition: color 0.3s;
+        }
+        .data-stats .number.green { color: #34c759; }
+        .data-stats .label { color: #6b7280; transition: color 0.3s; }
+
+        .danger-zone {
+            border-color: rgba(255, 59, 48, 0.2);
+            background: rgba(255, 59, 48, 0.04);
+        }
+        .danger-zone .section-title { color: #ff3b30; }
+
+        .version-info {
+            text-align: center;
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 20px;
+            padding-top: 14px;
+            border-top: 1px solid #e5e7eb;
+            transition: color 0.3s, border-color 0.3s;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1a1a2e;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 10px;
+            font-size: 13px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+            z-index: 999;
+        }
+        .toast.show { opacity: 1; }
+
+        .divider {
+            border: none;
+            border-top: 1px solid #e5e7eb;
+            margin: 12px 0;
+            transition: border-color 0.3s;
+        }
+        
+        .backup-info {
+            font-size: 11px;
+            color: #6b7280;
+            text-align: center;
+            margin-top: 8px;
+            transition: color 0.3s;
+        }
+
+        /* ===== ТЕМНАЯ ТЕМА ===== */
+        body.dark {
+            background: #1C2027;
+            color: #e5e7eb;
+        }
+        body.dark .header {
+            background: #131924;
+        }
+        body.dark .header-left h1 {
+            color: #e5e7eb;
+        }
+        body.dark .back-link {
+            color: #e5e7eb;
+        }
+        body.dark .section {
+            background: #131924;
+            border-color: #1C2027;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        body.dark .section-title,
+        body.dark .setting-label,
+        body.dark .range-value,
+        body.dark .toggle-label {
+            color: #e5e7eb;
+        }
+        body.dark .setting-description,
+        body.dark .backup-info,
+        body.dark .version-info {
+            color: #6b7280;
+        }
+        body.dark .data-stats {
+            border-color: #1C2027;
+        }
+        body.dark .data-stats .label {
+            color: #6b7280;
+        }
+        body.dark .data-stats .number {
+            color: #e5e7eb;
+        }
+        body.dark .divider {
+            border-color: #1C2027;
+        }
+        body.dark .version-info {
+            border-color: #1C2027;
+            color: #6b7280;
+        }
+        body.dark .danger-zone {
+            border-color: rgba(255, 59, 48, 0.25);
+            background: rgba(255, 59, 48, 0.08);
+        }
+        body.dark .btn-secondary {
+            background: #1C2027;
+            color: #e5e7eb;
+        }
+        body.dark .btn-secondary:hover {
+            background: #2c313a;
+        }
+        body.dark .range-row input[type="range"] {
+            background: #1C2027;
+        }
+        body.dark .range-row input[type="range"]::-webkit-slider-thumb {
+            background: #393F49;
+        }
+        body.dark .toggle-slider {
+            background-color: #1C2027;
+        }
+        body.dark input:checked + .toggle-slider {
+            background-color: #393F49;
+        }
+        body.dark .toast {
+            background: #131924;
+        }
+        body.dark .btn-primary {
+            background: #393F49;
+        }
+        body.dark .btn-primary:hover {
+            background: #2c313a;
+        }
+        /* Иконка просто показывается, без фильтров */
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-left">
+            <img id="settings-icon" src="" alt="FixMod">
+            <div>
+                <h1>Settings</h1>
+            </div>
+        </div>
+        <span class="back-link" id="back-btn">← Back</span>
+    </div>
+
+    <!-- APPEARANCE -->
+    <div class="section">
+        <div class="section-title">🎨 Appearance</div>
+
+        <div class="setting-group">
+            <div class="toggle-row">
+                <div class="toggle-label">
+                    <span class="icon">🌙</span>
+                    <span>Dark mode</span>
+                </div>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="dark-mode-toggle">
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="setting-group">
+            <label class="setting-label">Widget opacity</label>
+            <div class="range-row">
+                <input type="range" id="opacity-slider" min="10" max="100" value="85">
+                <span class="range-value" id="opacity-value">85%</span>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <label class="setting-label">Font size</label>
+            <div class="range-row">
+                <input type="range" id="font-size-slider" min="8" max="16" value="10" step="1">
+                <span class="range-value" id="font-size-value">10px</span>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="toggle-row">
+                <span>📷 Show QR code</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="qr-toggle" checked>
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <!-- DATA -->
+    <div class="section">
+        <div class="section-title">💾 Data</div>
+        
+        <div class="data-stats">
+            <span class="label">Total orders</span>
+            <span class="number" id="total-orders-db">0</span>
+        </div>
+        <div class="data-stats">
+            <span class="label">Repaired</span>
+            <span class="number green" id="repaired-count-db">0</span>
+        </div>
+        <div class="data-stats">
+            <span class="label">Today</span>
+            <span class="number" id="today-count-db">0</span>
+        </div>
+        
+        <div class="btn-group" style="margin-top:12px;">
+            <button class="btn btn-warning" id="restore-btn">🔄 Restore backup</button>
+            <button class="btn btn-success" id="export-btn">📤 Export JSON</button>
+            <button class="btn btn-secondary" id="import-btn">📥 Import JSON</button>
+            <input type="file" id="import-file-input" accept=".json" style="display:none;">
+        </div>
+        <div class="btn-group" style="margin-top:8px;">
+            <button class="btn btn-secondary" id="refresh-stats-btn" style="flex:1;">🔄 Refresh stats</button>
+        </div>
+        
+        <div class="backup-info" id="backup-info">📁 Backup folder: Downloads/FixModDB/</div>
+    </div>
+
+    <!-- DANGER ZONE -->
+    <div class="section danger-zone">
+        <div class="section-title">⚠️ Danger zone</div>
+        <div class="setting-description">Delete all data from local database. This cannot be undone!</div>
+        <button class="btn btn-danger" id="clear-data-btn" style="margin-top:10px; width:100%;">🗑️ Delete all data</button>
+    </div>
+
+    <div class="version-info" id="version-info">FixMod v1.0.0</div>
+
+    <div class="toast" id="toast"></div>
+
+    <script src="settings.js"></script>
+</body>
+</html>

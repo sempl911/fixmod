@@ -1,4 +1,4 @@
-// content.js - Fixably Widget + Server Integration with Offline Support
+// content.js - FixMod Widget with Local Storage
 
 // ============================================================
 // === НАСТРОЙКИ ===
@@ -25,21 +25,17 @@ const MAX_RETRIES = 15;
 // ============================================================
 
 function isOrderPage() {
-    // Проверяем, находимся ли мы на странице конкретного заказа
     const url = window.location.href;
-    // Проверяем, есть ли в URL /orders/ с числом
     const orderMatch = url.match(/\/orders\/(\d+)/);
     if (orderMatch) {
         return true;
     }
     
-    // Проверяем наличие элементов, которые есть только на странице заказа
     const orderHeader = document.querySelector('#order-header');
     const orderBody = document.querySelector('#order-body');
     const orderDevice = document.querySelector('#order-device');
     
     if (orderHeader || orderBody || orderDevice) {
-        // Дополнительная проверка - есть ли номер заказа
         const orderNumber = getOrderNumber();
         if (orderNumber && orderNumber !== 'N/A') {
             return true;
@@ -50,9 +46,7 @@ function isOrderPage() {
 }
 
 function isOrdersListPage() {
-    // Проверяем, находимся ли мы на странице списка заказов
     const url = window.location.href;
-    // Проверяем главную страницу, страницу "My orders", "In queue" и т.д.
     const listPatterns = [
         '/orders/me',
         '/orders/queue',
@@ -70,7 +64,6 @@ function isOrdersListPage() {
         }
     }
     
-    // Если нет номера заказа в URL и нет элементов заказа
     if (!url.match(/\/orders\/(\d+)/) && !document.querySelector('#order-header')) {
         return true;
     }
@@ -95,12 +88,10 @@ function getOrderNumber() {
 }
 
 function getCustomerEmail() {
-    // Если мы не на странице заказа, возвращаем null
     if (!isOrderPage()) {
         return null;
     }
     
-    // 1. Проверяем page-label
     const pageLabel = document.getElementById('page-label');
     if (pageLabel) {
         const text = pageLabel.textContent || '';
@@ -108,7 +99,6 @@ function getCustomerEmail() {
         if (emailMatch) return emailMatch[1];
     }
     
-    // 2. Ищем в теле страницы
     const allText = document.body.textContent;
     const emailRegex = /\b([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\b/g;
     const matches = allText.match(emailRegex);
@@ -116,7 +106,6 @@ function getCustomerEmail() {
         return matches[0];
     }
     
-    // 3. Ищем в кнопках и ссылках
     const buttonsAndLinks = document.querySelectorAll('button, a, .btn, [role="button"]');
     for (let el of buttonsAndLinks) {
         const text = el.textContent.trim();
@@ -126,7 +115,6 @@ function getCustomerEmail() {
         }
     }
     
-    // 4. Ищем в элементах с классами связанными с email
     const emailElements = document.querySelectorAll('[data-field="email"], [data-name="email"], .field-email, .customer-email, [class*="email"]');
     for (let el of emailElements) {
         const email = el.textContent.trim();
@@ -135,7 +123,6 @@ function getCustomerEmail() {
         }
     }
     
-    // 5. Ищем в скрытых полях
     const hiddenInputs = document.querySelectorAll('input[type="hidden"]');
     for (let input of hiddenInputs) {
         const value = input.value;
@@ -148,7 +135,6 @@ function getCustomerEmail() {
 }
 
 function getCurrentTechnician() {
-    // Если мы не на странице заказа, возвращаем null
     if (!isOrderPage()) {
         return null;
     }
@@ -162,7 +148,6 @@ function getCurrentTechnician() {
 }
 
 function getCurrentStatus() {
-    // Если мы не на странице заказа, возвращаем null
     if (!isOrderPage()) {
         return null;
     }
@@ -189,7 +174,6 @@ function getStatusCode(statusText) {
 }
 
 function getOfferTitle() {
-    // Если мы не на странице заказа, возвращаем null
     if (!isOrderPage()) {
         return null;
     }
@@ -211,7 +195,6 @@ function getOfferTitle() {
 }
 
 function getDeclinedReason() {
-    // Если мы не на странице заказа, возвращаем null
     if (!isOrderPage()) {
         return null;
     }
@@ -227,27 +210,24 @@ function getDeclinedReason() {
 }
 
 function getDeviceName() {
-    // Если мы не на странице заказа, возвращаем "Fixably Widget"
     if (!isOrderPage()) {
-        return 'Fixably Widget';
+        return 'FixMod Widget';
     }
     
     const deviceLink = document.querySelector('#order-device-panel .panel-heading a, #order-device .panel-heading a');
     if (deviceLink) {
         let fullText = deviceLink.textContent || deviceLink.innerText;
         fullText = fullText.trim().replace(/\s+/g, ' ').replace(/<i[^>]*>.*?<\/i>/g, '');
-        return fullText || 'Fixably Widget';
+        return fullText || 'FixMod Widget';
     }
-    return 'Fixably Widget';
+    return 'FixMod Widget';
 }
 
 function getIMEI() {
-    // Если мы не на странице заказа, возвращаем null
     if (!isOrderPage()) {
         return null;
     }
     
-    // Сначала проверяем панель устройства
     const devicePanel = document.getElementById('order-device');
     if (devicePanel) {
         const panelText = devicePanel.innerText;
@@ -257,7 +237,6 @@ function getIMEI() {
         if (imeiMatch) return imeiMatch[1];
     }
     
-    // Ищем в элементах с текстом
     const allTextElements = document.querySelectorAll('.editable, .order-right-field-col-2, .form-control-static, .dl-horizontal dd, .panel-body');
     for (let el of allTextElements) {
         const text = el.textContent || '';
@@ -265,13 +244,11 @@ function getIMEI() {
         if (match) return match[1];
     }
     
-    // Ищем в теле страницы
     const bodyText = document.body.innerText;
     const imeiRegex = /\b([0-9]{15})\b/;
     const imeiMatch = bodyText.match(imeiRegex);
     if (imeiMatch) return imeiMatch[1];
     
-    // Ищем более свободный вариант
     const imeiLooseRegex = /\b([0-9]{8,}[- ]?[0-9]{6,})\b/;
     const looseMatch = bodyText.match(imeiLooseRegex);
     if (looseMatch) {
@@ -321,7 +298,6 @@ function getMonthNumber(monthName) {
 async function getTimelineData() {
     console.log('📡 Загрузка таймлайна...');
     
-    // Если мы не на странице заказа, возвращаем null
     if (!isOrderPage()) {
         return null;
     }
@@ -484,7 +460,6 @@ async function getTimelineData() {
 function getResolution() {
     console.log('🔍 Searching for diagnosis text...');
     
-    // Если мы не на странице заказа, возвращаем null
     if (!isOrderPage()) {
         return null;
     }
@@ -655,7 +630,7 @@ async function collectOrderData() {
     }
 
     const deviceName = getDeviceName();
-    if (deviceName && deviceName !== 'Fixably Widget') {
+    if (deviceName && deviceName !== 'FixMod Widget') {
         data.device_model = deviceName;
     }
 
@@ -734,52 +709,52 @@ function hasResolutionChanged() {
     return currentResolution !== lastResolution;
 }
 
-function shouldSendData(currentData) {
+function shouldSaveData(currentData) {
     if (!hasTechnician()) {
-        console.log('ℹ️ No technician assigned, skipping send');
+        console.log('ℹ️ No technician assigned, skipping save');
         return false;
     }
 
     if (!currentData.order_number || currentData.order_number === 'N/A') {
-        console.log('ℹ️ No order number, skipping send');
+        console.log('ℹ️ No order number, skipping save');
         return false;
     }
 
     if (isFirstLoad) {
-        console.log('📦 First load, sending initial data');
+        console.log('📦 First load, saving initial data');
         isFirstLoad = false;
         return true;
     }
 
     const currentResolution = getResolution();
     if (currentResolution && currentResolution !== lastResolution) {
-        console.log('🔄 Resolution changed, sending update');
+        console.log('🔄 Resolution changed, saving update');
         lastResolution = currentResolution;
         return true;
     }
 
     if (currentResolution && !lastResolution) {
-        console.log('📝 New resolution found, sending update');
+        console.log('📝 New resolution found, saving update');
         lastResolution = currentResolution;
         return true;
     }
 
     if (hasStatusChanged()) {
-        console.log('🔄 Status changed, sending update');
+        console.log('🔄 Status changed, saving update');
         return true;
     }
 
     if (hasTechnicianChanged()) {
-        console.log('🔄 Technician changed, sending update');
+        console.log('🔄 Technician changed, saving update');
         return true;
     }
 
     if (hasImeiChanged()) {
-        console.log('🔄 IMEI changed, sending update');
+        console.log('🔄 IMEI changed, saving update');
         return true;
     }
 
-    console.log('ℹ️ No changes detected, skipping send');
+    console.log('ℹ️ No changes detected, skipping save');
     return false;
 }
 
@@ -816,9 +791,9 @@ function showNotification(message, type = 'success') {
     notification.textContent = message;
     document.body.appendChild(notification);
 
-    if (!document.getElementById('fixably-notification-styles')) {
+    if (!document.getElementById('fixmod-notification-styles')) {
         const style = document.createElement('style');
-        style.id = 'fixably-notification-styles';
+        style.id = 'fixmod-notification-styles';
         style.textContent = `
             @keyframes slideInRight {
                 from { transform: translateX(100px); opacity: 0; }
@@ -839,24 +814,24 @@ function showNotification(message, type = 'success') {
 }
 
 // ============================================================
-// === ОТПРАВКА НА СЕРВЕР ===
+// === ЛОКАЛЬНОЕ СОХРАНЕНИЕ (вместо отправки на сервер) ===
 // ============================================================
 
-async function sendOrderToServer() {
+async function saveOrderLocally() {
     const currentData = await collectOrderData();
     
-    if (!shouldSendData(currentData)) {
+    if (!shouldSaveData(currentData)) {
         return null;
     }
 
     try {
         const response = await chrome.runtime.sendMessage({
-            type: 'SEND_ORDER',
+            type: 'SAVE_ORDER',
             data: currentData
         });
         
         if (response && response.success) {
-            console.log('✅ Order saved to server:', response.data);
+            console.log('✅ Order saved locally:', currentData.order_number);
             
             lastOrderData = currentData;
             lastStatus = getCurrentStatus();
@@ -865,17 +840,11 @@ async function sendOrderToServer() {
             lastStatusCode = getStatusCode(lastStatus);
             lastResolution = currentData.resolution;
             
-            if (response.data && response.data.status_changed) {
-                showNotification(`Status: ${response.data.previous_status || ''} → ${response.data.new_status || ''}`, 'success');
-            } else {
-                showNotification(`Order ${currentData.order_number} saved ✅`, 'success');
-            }
-            
+            showNotification(`Order ${currentData.order_number} saved 💾`, 'success');
             return response.data;
         } else {
-            const errorMsg = response?.error || 'Unknown error';
-            console.warn('⚠️ Order saved offline or error:', errorMsg);
-            showNotification(`Order ${currentData.order_number} saved offline 📶`, 'warning');
+            console.warn('⚠️ Failed to save order:', response?.error);
+            showNotification('Error saving order', 'error');
             return null;
         }
         
@@ -893,7 +862,6 @@ async function sendOrderToServer() {
 function setupResolutionMonitoring() {
     console.log('🔍 Setting up Resolution monitoring...');
     
-    // Если мы не на странице заказа, не настраиваем мониторинг
     if (!isOrderPage()) {
         return;
     }
@@ -903,7 +871,7 @@ function setupResolutionMonitoring() {
         if (currentResolution && currentResolution !== lastResolution) {
             console.log('🔄 Resolution changed in timeline:', currentResolution);
             lastResolution = currentResolution;
-            sendOrderToServer();
+            saveOrderLocally();
         }
     });
     
@@ -919,7 +887,7 @@ function setupResolutionMonitoring() {
             if (currentResolution && currentResolution !== lastResolution) {
                 console.log('🔄 Resolution changed in diagnostic:', currentResolution);
                 lastResolution = currentResolution;
-                sendOrderToServer();
+                saveOrderLocally();
             }
         });
     }
@@ -930,7 +898,6 @@ function setupResolutionMonitoring() {
 // ============================================================
 
 function retryEmailSearch() {
-    // Если мы не на странице заказа, не ищем
     if (!isOrderPage()) {
         return;
     }
@@ -957,7 +924,6 @@ function retryEmailSearch() {
 }
 
 function retryIMEISearch() {
-    // Если мы не на странице заказа, не ищем
     if (!isOrderPage()) {
         return;
     }
@@ -1001,15 +967,14 @@ function resetWidgetData() {
     if (insSpan) insSpan.textContent = 'N/A';
     if (imeiSpan) imeiSpan.textContent = 'N/A';
     if (emailSpan) emailSpan.textContent = 'N/A';
-    if (headerTitle) headerTitle.textContent = 'Fixably Widget';
+    if (headerTitle) headerTitle.textContent = 'FixMod Widget';
     
-    // Сбрасываем счетчики ретраев
     emailRetryCount = 0;
     imeiRetryCount = 0;
 }
 
 // ============================================================
-// === ВАШ СУЩЕСТВУЮЩИЙ КОД ВИДЖЕТА ===
+// === ВЕСЬ ОСТАЛЬНОЙ КОД ВИДЖЕТА (НЕ ИЗМЕНЯЕТСЯ) ===
 // ============================================================
 
 if (!window.location.href.includes('evy.fixably.com')) {
@@ -1070,12 +1035,10 @@ if (!window.location.href.includes('evy.fixably.com')) {
     let qrSize = 100;
     let currentThemeId = 'default';
     
-    // Функция для генерации QR
     function generateQRUrl(data, size) {
         return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(data)}&format=png&margin=10`;
     }
     
-    // === НАСТРОЙКА ОТСТУПОВ ===
     const PADDING_CONFIG = {
         withQR: {
             windowBodyPadding: '4px 8px 4px 8px',
@@ -1367,41 +1330,33 @@ if (!window.location.href.includes('evy.fixably.com')) {
         }
     }
     
-    // ОСНОВНАЯ ФУНКЦИЯ ОБНОВЛЕНИЯ ДАННЫХ
     function updateAllData() {
-        // Проверяем, находимся ли мы на странице заказа
         if (!isOrderPage()) {
-            // Если мы на странице списка заказов или другой странице - сбрасываем все данные
             resetWidgetData();
             updateQRCode();
             console.log('📋 On orders list page - data reset to N/A');
             return;
         }
         
-        // Мы на странице конкретного заказа - загружаем данные
         const orderNumber = getOrderNumber();
         const offerTitle = getOfferTitle();
         const deviceName = getDeviceName();
         
-        // СБРАСЫВАЕМ IMEI перед поиском
         const imeiSpan = document.getElementById('imei');
         if (imeiSpan) {
             imeiSpan.textContent = 'N/A';
         }
         
-        // Ищем IMEI заново
         const imei = getIMEI();
         if (imei && imeiSpan) {
             console.log('📱 IMEI found:', imei);
             imeiSpan.textContent = imei;
             imeiRetryCount = 0;
         } else if (imeiSpan) {
-            // Если не найден, запускаем повторный поиск
             imeiRetryCount = 0;
             setTimeout(retryIMEISearch, 1000);
         }
         
-        // Обновляем остальные поля
         const soSpan = document.getElementById('order-number');
         const insSpan = document.getElementById('insurance-type');
         const emailSpan = document.getElementById('customer-email');
@@ -1411,7 +1366,6 @@ if (!window.location.href.includes('evy.fixably.com')) {
         if (insSpan) insSpan.textContent = offerTitle || 'N/A';
         if (headerTitle) headerTitle.textContent = deviceName;
         
-        // Обработка email
         if (emailSpan) {
             const customerEmail = getCustomerEmail();
             if (customerEmail) {
@@ -1432,7 +1386,8 @@ if (!window.location.href.includes('evy.fixably.com')) {
         console.log('IMEI:', imei || 'N/A');
         console.log('Email:', document.getElementById('customer-email')?.textContent || 'N/A');
         
-        sendOrderToServer();
+        // === ЗДЕСЬ БЫЛО sendOrderToServer(), ТЕПЕРЬ saveOrderLocally() ===
+        saveOrderLocally();
     }
     
     // === ТЕМЫ ===
@@ -1525,9 +1480,9 @@ if (!window.location.href.includes('evy.fixably.com')) {
     // === СОЗДАНИЕ ВИДЖЕТА ===
     
     const STORAGE_KEYS = {
-        WIDGET_POSITION: 'fixably_widget_position',
-        WIDGET_SIZE: 'fixably_widget_size',
-        WIDGET_COLLAPSED: 'fixably_widget_collapsed'
+        WIDGET_POSITION: 'fixmod_widget_position',
+        WIDGET_SIZE: 'fixmod_widget_size',
+        WIDGET_COLLAPSED: 'fixmod_widget_collapsed'
     };
     
     function loadSavedPosition() {
@@ -1590,16 +1545,12 @@ if (!window.location.href.includes('evy.fixably.com')) {
         }
     }
     
-    // Функция для наблюдения за изменениями DOM
     function setupDOMObserver() {
-        // Наблюдаем за изменениями в DOM, чтобы перехватывать обновления
         const domObserver = new MutationObserver(() => {
-            // Проверяем, изменился ли номер заказа
             const currentOrder = getOrderNumber();
             if (currentOrder && currentOrder !== currentOrderNumber) {
                 currentOrderNumber = currentOrder;
                 console.log('🔄 Order changed, refreshing data...');
-                // Сбрасываем IMEI и обновляем данные
                 const imeiSpan = document.getElementById('imei');
                 if (imeiSpan) {
                     imeiSpan.textContent = 'N/A';
@@ -1610,7 +1561,6 @@ if (!window.location.href.includes('evy.fixably.com')) {
                 }, 500);
             }
             
-            // Проверяем, обновился ли IMEI в DOM
             const imeiSpan = document.getElementById('imei');
             if (imeiSpan && imeiSpan.textContent === 'N/A' && isOrderPage()) {
                 const imei = getIMEI();
@@ -1621,7 +1571,6 @@ if (!window.location.href.includes('evy.fixably.com')) {
                 }
             }
             
-            // Проверяем email
             const emailSpan = document.getElementById('customer-email');
             if (emailSpan && emailSpan.textContent === 'N/A' && isOrderPage()) {
                 const email = getCustomerEmail();
@@ -1655,20 +1604,18 @@ if (!window.location.href.includes('evy.fixably.com')) {
         const customerEmail = getCustomerEmail();
         const imei = getIMEI();
         
-        // Сохраняем номер текущего заказа
         currentOrderNumber = orderNumber;
         
         loadQRSetting();
         
         const iconPath = chrome.runtime.getURL('uiAssets/');
         
-        // Определяем, нужно ли показывать данные или N/A
         const isOrder = isOrderPage();
         const displayOrderNumber = isOrder ? orderNumber : 'N/A';
         const displayOfferTitle = isOrder ? (offerTitle || 'N/A') : 'N/A';
         const displayImei = isOrder ? (imei || 'N/A') : 'N/A';
         const displayEmail = isOrder ? (customerEmail || 'N/A') : 'N/A';
-        const displayDeviceName = isOrder ? deviceName : 'Fixably Widget';
+        const displayDeviceName = isOrder ? deviceName : 'FixMod Widget';
         
         windowDiv = document.createElement('div');
         windowDiv.id = 'my-draggable-window';
@@ -1733,22 +1680,18 @@ if (!window.location.href.includes('evy.fixably.com')) {
             initQRCode(isOrder ? orderNumber : null);
         }
         
-        // Настраиваем наблюдатель за DOM
         const domObserver = setupDOMObserver();
         
-        // Если мы на странице заказа и IMEI не найден, запускаем повторный поиск
         if (isOrder && !imei) {
             imeiRetryCount = 0;
             setTimeout(retryIMEISearch, 1000);
         }
         
-        // Если мы на странице заказа и email не найден, запускаем повторный поиск
         if (isOrder && !customerEmail) {
             emailRetryCount = 0;
             setTimeout(retryEmailSearch, 1000);
         }
         
-        // Стили
         const style = document.createElement('style');
         style.textContent = `
             #my-draggable-window {
@@ -1970,7 +1913,6 @@ if (!window.location.href.includes('evy.fixably.com')) {
         `;
         document.head.appendChild(style);
         
-        // Применяем сохраненную тему
         setTimeout(() => {
             loadSavedTheme();
         }, 50);
@@ -1984,7 +1926,6 @@ if (!window.location.href.includes('evy.fixably.com')) {
             });
         });
         
-        // --- Обработчики ---
         const header = windowDiv.querySelector('.window-header');
         const resizeHandle = windowDiv.querySelector('.resize-handle');
         const resizeHandleRight = windowDiv.querySelector('.resize-handle-right');
@@ -2001,7 +1942,6 @@ if (!window.location.href.includes('evy.fixably.com')) {
             saveTimeout = setTimeout(() => savePositionAndSize(), 100);
         }
         
-        // Растягивание по горизонтали (правый край)
         let isResizingRight = false;
         let startResizeX = 0;
         let startResizeWidth = 0;
@@ -2159,14 +2099,13 @@ if (!window.location.href.includes('evy.fixably.com')) {
         loadSavedOpacity();
         window.addEventListener('beforeunload', () => savePositionAndSize());
         
-        // Запускаем мониторинг разрешений
         setTimeout(() => {
             setupResolutionMonitoring();
         }, 2000);
         
-        // Отправляем данные на сервер
+        // === ЗДЕСЬ БЫЛО sendOrderToServer(), ТЕПЕРЬ saveOrderLocally() ===
         setTimeout(() => {
-            sendOrderToServer();
+            saveOrderLocally();
         }, 3000);
         
         setTimeout(() => {
@@ -2174,9 +2113,7 @@ if (!window.location.href.includes('evy.fixably.com')) {
             loadSavedTheme();
         }, 300);
         
-        // Добавляем обработчик для перезагрузки после действий
         document.addEventListener('click', function(e) {
-            // Проверяем, был ли клик по кнопке, которая может изменить данные
             const target = e.target;
             if (target && (
                 target.closest('.btn') ||
@@ -2185,10 +2122,8 @@ if (!window.location.href.includes('evy.fixably.com')) {
                 target.closest('[data-nav]') ||
                 target.closest('[data-inline]')
             )) {
-                // Через небольшую задержку обновляем данные
                 setTimeout(() => {
                     console.log('🔄 Action detected, refreshing data...');
-                    // Сбрасываем IMEI
                     const imeiSpan = document.getElementById('imei');
                     if (imeiSpan) {
                         imeiSpan.textContent = 'N/A';
@@ -2202,12 +2137,10 @@ if (!window.location.href.includes('evy.fixably.com')) {
     
     createWidget();
     
-    // Функция ожидания IMEI
     function waitForIMEI() {
         let attempts = 0;
         const maxAttempts = 20;
         
-        // Если мы не на странице заказа, не ждем IMEI
         if (!isOrderPage()) {
             console.log('ℹ️ Not on order page, skipping IMEI wait');
             return;
@@ -2223,7 +2156,7 @@ if (!window.location.href.includes('evy.fixably.com')) {
                     imeiRetryCount = 0;
                 }
                 clearInterval(checkInterval);
-                sendOrderToServer();
+                saveOrderLocally();
             } else if (attempts >= maxAttempts) {
                 console.log('IMEI не найден после', maxAttempts, 'попыток');
                 clearInterval(checkInterval);
@@ -2238,7 +2171,6 @@ if (!window.location.href.includes('evy.fixably.com')) {
             setTimeout(() => {
                 const headerTitle = document.getElementById('widget-header-title');
                 if (headerTitle) headerTitle.textContent = getDeviceName();
-                // Проверяем, на странице ли мы заказа
                 if (!isOrderPage()) {
                     resetWidgetData();
                 }
@@ -2269,13 +2201,10 @@ if (!window.location.href.includes('evy.fixably.com')) {
             
             setTimeout(() => {
                 if (windowDiv) {
-                    // Проверяем, на странице ли мы заказа
                     if (!isOrderPage()) {
-                        // Если нет - сбрасываем все данные
                         resetWidgetData();
                         console.log('📋 On orders list page - data reset to N/A');
                     } else {
-                        // Если на странице заказа - обновляем данные
                         const imeiSpan = document.getElementById('imei');
                         if (imeiSpan) {
                             imeiSpan.textContent = 'N/A';
@@ -2294,5 +2223,5 @@ if (!window.location.href.includes('evy.fixably.com')) {
     observer.observe(document.body, { childList: true, subtree: true });
     
     window.refreshWidgetData = updateAllData;
-    console.log('✅ Виджет Fixably загружен!');
+    console.log('✅ Виджет FixMod загружен!');
 }

@@ -1,353 +1,253 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="utf-8">
-    <title>FixMod Settings</title>
+    <meta charset="UTF-8">
+    <title>FixMod</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        body {
-            width: 320px;
-            padding: 16px;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            margin: 0;
-            transition: background 0.3s ease;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         
+        /* ===== СВЕТЛАЯ ТЕМА ===== */
+        body {
+            width: 280px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #e8eaed;
+            padding: 0;
+            margin: 0;
+            transition: background 0.3s;
+        }
         .header {
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            margin-bottom: 16px;
+            justify-content: space-between;
+            padding: 10px 14px;
+            background: #d1d5db;
+            transition: background 0.3s;
         }
-        h3 {
-            margin: 0;
-            font-size: 16px;
-        }
-        
-        .status-indicator {
+        .header-left {
             display: flex;
             align-items: center;
-            gap: 8px;
-            font-size: 12px;
-            opacity: 0.8;
+            gap: 10px;
         }
-        .status-dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            display: inline-block;
-            flex-shrink: 0;
+        .header-left img {
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
         }
-        .status-dot.online { background: #34c759; }
-        .status-dot.offline { background: #ff9500; }
-        .status-dot.error { background: #ff3b30; }
-        .status-dot.unknown { background: #86868b; }
+        .header-left .title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #1a1a2e;
+            transition: color 0.3s;
+        }
+        .header-left .version {
+            font-size: 10px;
+            color: #6b7280;
+            margin-left: 4px;
+            transition: color 0.3s;
+        }
+        .settings-btn {
+            background: rgba(0,0,0,0.06);
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            padding: 4px 8px;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .settings-btn:hover {
+            background: rgba(0,0,0,0.1);
+        }
+        .settings-btn img {
+            width: 20px;
+            height: 20px;
+            display: block;
+        }
+
+        .content {
+            padding: 14px;
+        }
         
-        .setting {
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px;
             margin-bottom: 12px;
         }
-        .setting label {
-            display: block;
-            font-size: 12px;
-            opacity: 0.8;
-            margin-bottom: 4px;
+        .stat-card {
+            background: #ffffff;
+            border-radius: 10px;
+            padding: 10px 6px;
+            text-align: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+            cursor: pointer;
+            transition: transform 0.15s, background 0.3s, box-shadow 0.3s;
         }
-        .setting label.row-label {
+        .stat-card:hover {
+            transform: scale(1.02);
+        }
+        .stat-number {
+            font-size: 22px;
+            font-weight: 700;
+            color: #1a1a2e;
+            transition: color 0.3s;
+        }
+        .stat-number.green { color: #34c759; }
+        .stat-number.purple { color: #393F49; transition: color 0.3s; }
+        .stat-label {
+            font-size: 9px;
+            color: #6b7280;
+            margin-top: 2px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            transition: color 0.3s;
+        }
+        
+        .btn-group {
             display: flex;
-            justify-content: space-between;
-            margin-bottom: 8px;
-            font-size: 14px;
-            opacity: 0.9;
+            gap: 8px;
         }
-        .setting input[type="text"] {
-            width: 100%;
-            padding: 8px 12px;
-            border: 1px solid rgba(255,255,255,0.2);
-            border-radius: 8px;
-            background: rgba(255,255,255,0.1);
-            color: white;
-            font-size: 12px;
-            transition: all 0.2s;
-            font-family: inherit;
-        }
-        .setting input[type="text"]:focus {
-            outline: none;
-            border-color: rgba(255,255,255,0.5);
-            background: rgba(255,255,255,0.15);
-        }
-        .setting input[type="text"]::placeholder {
-            color: rgba(255,255,255,0.4);
-        }
-        
-        .setting input[type="range"] {
-            width: 100%;
-            cursor: pointer;
-            background: rgba(255,255,255,0.2);
-            height: 4px;
-            border-radius: 5px;
-            -webkit-appearance: none;
-        }
-        .setting input[type="range"]:focus {
-            outline: none;
-        }
-        .setting input[type="range"]::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            width: 16px;
-            height: 16px;
-            border-radius: 50%;
-            background: white;
-            cursor: pointer;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-        }
-        
         .btn {
-            width: 100%;
-            padding: 8px;
-            margin-top: 4px;
-            border: 1px solid rgba(255,255,255,0.2);
+            flex: 1;
+            padding: 8px 0;
+            border: none;
             border-radius: 8px;
-            background: rgba(255,255,255,0.1);
-            color: white;
-            cursor: pointer;
             font-size: 12px;
-            transition: all 0.2s;
-            font-family: inherit;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+            background: #ffffff;
+            color: #1a1a2e;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
         }
         .btn:hover {
-            background: rgba(255,255,255,0.2);
+            background: #e5e7eb;
         }
         .btn-primary {
-            background: rgba(255,255,255,0.2);
+            background: #393F49;
+            color: white;
         }
-        .btn-primary:hover {
-            background: rgba(255,255,255,0.3);
+        .btn-primary:hover { background: #2c313a; }
+        
+        .footer {
+            padding-top: 10px;
+            border-top: 1px solid #d1d5db;
+            font-size: 9px;
+            color: #6b7280;
+            text-align: center;
+            transition: border-color 0.3s, color 0.3s;
         }
-        .btn-success {
-            background: rgba(52, 199, 89, 0.3);
-            border-color: rgba(52, 199, 89, 0.4);
-        }
-        .btn-success:hover {
-            background: rgba(52, 199, 89, 0.4);
-        }
-        .btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
+        .footer .highlight {
+            font-weight: 500;
+            color: #393F49;
+            transition: color 0.3s;
         }
         
-        .save-hint {
-            font-size: 10px;
+        .version-bottom {
+            font-size: 8px;
+            color: #6b7280;
             opacity: 0.4;
-            margin-top: 2px;
-            text-align: right;
-        }
-        
-        select {
-            width: 100%;
-            padding: 8px;
-            margin-top: 5px;
-            background: rgba(255,255,255,0.15);
-            border: 1px solid rgba(255,255,255,0.2);
-            color: white;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 12px;
-            font-family: inherit;
-            transition: all 0.2s;
-        }
-        select:focus {
-            outline: none;
-            border-color: rgba(255,255,255,0.5);
-        }
-        select option {
-            background: #2a2a3e;
-            color: white;
-        }
-        
-        .toggle-switch {
-            position: relative;
-            display: inline-block;
-            width: 44px;
-            height: 22px;
-            flex-shrink: 0;
-        }
-        .toggle-switch input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-        .toggle-slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: rgba(255,255,255,0.3);
-            transition: 0.3s;
-            border-radius: 22px;
-        }
-        .toggle-slider:before {
-            position: absolute;
-            content: "";
-            height: 18px;
-            width: 18px;
-            left: 2px;
-            bottom: 2px;
-            background-color: white;
-            transition: 0.3s;
-            border-radius: 50%;
-        }
-        input:checked + .toggle-slider {
-            background-color: #4CAF50;
-        }
-        input:checked + .toggle-slider:before {
-            transform: translateX(22px);
-        }
-        
-        .toggle-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .font-size-value {
-            font-weight: bold;
-        }
-        
-        .offline-count {
+            margin-top: 6px;
             text-align: center;
-            font-size: 11px;
-            opacity: 0.6;
-            margin-top: 8px;
-            padding: 6px;
-            border-radius: 6px;
-            background: rgba(255,255,255,0.05);
+            transition: color 0.3s;
         }
-        
-        .dashboard-link {
-            display: block;
-            text-align: center;
-            margin-top: 10px;
-            color: white;
-            text-decoration: none;
-            font-size: 12px;
-            opacity: 0.8;
-            border: 1px solid rgba(255,255,255,0.2);
-            border-radius: 8px;
-            padding: 8px;
-            transition: all 0.2s;
+
+        /* ===== ТЕМНАЯ ТЕМА ===== */
+        body.dark {
+            background: #1C2027;
         }
-        .dashboard-link:hover {
-            opacity: 1;
+        body.dark .header {
+            background: #131924;
+        }
+        body.dark .header-left .title {
+            color: #e5e7eb;
+        }
+        body.dark .header-left .version {
+            color: #6b7280;
+        }
+        body.dark .settings-btn {
+            background: rgba(255,255,255,0.06);
+        }
+        body.dark .settings-btn:hover {
             background: rgba(255,255,255,0.1);
         }
-        
-        .version-info {
-            text-align: center;
-            font-size: 10px;
-            opacity: 0.4;
-            margin-top: 12px;
-            padding-top: 8px;
-            border-top: 1px solid rgba(255,255,255,0.1);
+        body.dark .stat-card {
+            background: #131924;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
         }
-        
-        .divider {
-            border: none;
-            border-top: 1px solid rgba(255,255,255,0.08);
-            margin: 12px 0;
+        body.dark .stat-number {
+            color: #e5e7eb;
         }
+        body.dark .stat-number.purple {
+            color: #e5e7eb;
+        }
+        body.dark .stat-label {
+            color: #6b7280;
+        }
+        body.dark .btn {
+            background: #131924;
+            color: #e5e7eb;
+        }
+        body.dark .btn:hover {
+            background: #1C2027;
+        }
+        body.dark .btn-primary {
+            background: #393F49;
+            color: white;
+        }
+        body.dark .btn-primary:hover { background: #2c313a; }
+        body.dark .footer {
+            border-color: #1C2027;
+            color: #6b7280;
+        }
+        body.dark .footer .highlight {
+            color: #e5e7eb;
+        }
+        body.dark .version-bottom {
+            color: #6b7280;
+        }
+        /* Иконка просто показывается, без фильтров */
     </style>
 </head>
 <body>
     <div class="header">
-        <h3>⚙️ FixMod</h3>
-        <div class="status-indicator">
-            <span id="statusLabel">Checking...</span>
-            <span class="status-dot unknown" id="statusDot"></span>
+        <div class="header-left">
+            <img id="popup-icon" src="" alt="FixMod">
+            <span class="title">FixMod</span>
+            <span class="version">v<span id="version-display">1.0</span></span>
         </div>
+        <button class="settings-btn" id="settings-btn" title="Settings">
+            <img id="settings-icon" src="" alt="Settings">
+        </button>
     </div>
 
-    <!-- URL настройки -->
-    <div class="setting">
-        <label>🔗 Server URL</label>
-        <input type="text" id="apiUrl" placeholder="http://server:8000/api/fixably/order">
-        <div class="save-hint">Click Save to apply</div>
-    </div>
-    <button class="btn btn-primary" id="saveUrlBtn">💾 Save URL</button>
-
-    <hr class="divider">
-
-    <!-- Прозрачность -->
-    <div class="setting">
-        <label class="row-label">
-            <span>🔘 Opacity</span>
-            <span id="opacity-value">85%</span>
-        </label>
-        <input type="range" id="opacity-slider" min="10" max="100" value="85">
-    </div>
-
-    <!-- Размер шрифта -->
-    <div class="setting">
-        <label class="row-label">
-            <span>🔤 Font size</span>
-            <span id="font-size-value" class="font-size-value">12px</span>
-        </label>
-        <input type="range" id="font-size-slider" min="10" max="18" value="12" step="1">
-    </div>
-
-    <!-- QR код -->
-    <div class="setting">
-        <div class="toggle-row">
-            <span>📷 QR code</span>
-            <label class="toggle-switch">
-                <input type="checkbox" id="qr-toggle" checked>
-                <span class="toggle-slider"></span>
-            </label>
+    <div class="content">
+        <div class="stats-grid">
+            <div class="stat-card" id="stats-btn" title="Open statistics">
+                <div class="stat-number purple" id="today-count">0</div>
+                <div class="stat-label">Today</div>
+            </div>
+            <div class="stat-card" id="stats-btn" title="Open statistics">
+                <div class="stat-number green" id="repaired-count">0</div>
+                <div class="stat-label">Repaired</div>
+            </div>
+            <div class="stat-card" id="stats-btn" title="Open statistics">
+                <div class="stat-number" id="total-count">0</div>
+                <div class="stat-label">Total</div>
+            </div>
         </div>
-    </div>
 
-    <!-- Цветовая схема -->
-    <div class="setting">
-        <label>🎨 Color scheme</label>
-        <select id="theme-select">
-            <option value="default">🌙 Purple (Default)</option>
-            <option value="dark">🌑 Dark Blue</option>
-            <option value="green">🍃 Green</option>
-            <option value="orange">🍊 Orange</option>
-            <option value="blue">💙 Classic Blue</option>
-            <option value="red">❤️ Red</option>
-            <option value="teal">🩵 Teal</option>
-            <option value="gray1">⚙️ Light Gray</option>
-            <option value="gray2">🔘 Dark Gray</option>
-            <option value="gray3">🌫️ Wet Asphalt</option>
-            <option value="gray4">🪨 Graphite</option>
-        </select>
-    </div>
+        <div class="btn-group">
+            <button class="btn" id="refresh-btn">🔄 Refresh</button>
+            <button class="btn btn-primary" id="stats-open-btn">📊 Statistics</button>
+        </div>
 
-    <!-- Сброс -->
-    <button id="reset-btn">Reset opacity to 85%</button>
+        <div class="footer">
+            <span class="highlight" id="orders-count">0 orders</span>
+        </div>
 
-    <hr class="divider">
-
-    <!-- Синхронизация -->
-    <button class="btn btn-success" id="syncBtn">🔄 Sync Offline Orders</button>
-    <div class="offline-count" id="offlineCount">📶 Offline orders: 0</div>
-
-    <hr class="divider">
-
-    <!-- Ссылка на дашборд -->
-    <a href="http://167.99.138.93:8000/fixably/dashboard" target="_blank" class="dashboard-link">
-        📊 Open Dashboard
-    </a>
-
-    <div class="version-info" id="version-info">
-        FixMod v1.0.7
+        <div class="version-bottom" id="version-info">FixMod v1.0.0</div>
     </div>
 
     <script src="popup.js"></script>

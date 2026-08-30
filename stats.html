@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>FixMod - Statistics</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        /* ===== СВЕТЛАЯ ТЕМА ===== */
+        :root {
+            --bg-primary: #e8eaed;
+            --bg-card: #ffffff;
+            --bg-input: #ffffff;
+            --text-primary: #1a1a2e;
+            --text-secondary: #6b7280;
+            --border-color: #d1d5db;
+            --shadow-color: rgba(0,0,0,0.06);
+            --chip-bg: #e5e7eb;
+            --primary-color: #393F49;
+            --input-border: #d1d5db;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            padding: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+            transition: background 0.3s, color 0.3s;
+            color: var(--text-primary);
+        }
+
+        /* ===== ТЕМНАЯ ТЕМА ===== */
+        body.dark {
+            --bg-primary: #1C2027;
+            --bg-card: #131924;
+            --bg-input: #131924;
+            --text-primary: #e5e7eb;
+            --text-secondary: #6b7280;
+            --border-color: #1C2027;
+            --shadow-color: rgba(0,0,0,0.3);
+            --chip-bg: #1C2027;
+            --primary-color: #393F49;
+            --input-border: #1C2027;
+        }
+
+        /* ===== HEADER ===== */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            gap: 12px;
+            background: var(--bg-card);
+            padding: 16px 24px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px var(--shadow-color);
+            border: 1px solid var(--border-color);
+            transition: background 0.3s, box-shadow 0.3s, border-color 0.3s;
+        }
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .header-left img {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+        }
+        .header-left h1 {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--text-primary);
+            transition: color 0.3s;
+        }
+        .header-left span {
+            font-size: 14px;
+            color: var(--text-secondary);
+            transition: color 0.3s;
+        }
+        .header-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+            background: var(--chip-bg);
+            color: var(--text-primary);
+        }
+        .btn:hover { background: var(--border-color); }
+        .btn-primary { background: var(--primary-color); color: white; }
+        .btn-primary:hover { opacity: 0.85; }
+        .btn-sm { padding: 4px 12px; font-size: 12px; }
+
+        /* ===== STATS CARDS ===== */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 100px 1fr 1fr 1fr 1fr 1fr 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 20px;
+            align-items: stretch;
+        }
+        .stat-card {
+            background: var(--bg-card);
+            border-radius: 10px;
+            padding: 10px 8px;
+            text-align: center;
+            box-shadow: 0 1px 3px var(--shadow-color);
+            border: 1px solid var(--border-color);
+            transition: all 0.25s ease;
+            cursor: default;
+            min-width: 0;
+            overflow: hidden;
+            position: relative;
+        }
+        .stat-card .number {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--text-primary);
+            transition: transform 0.25s ease, color 0.3s;
+        }
+        .stat-card .number.green { color: #34c759; }
+        .stat-card .number.orange { color: #ff9500; }
+        .stat-card .number.blue { color: #007aff; }
+        .stat-card .number.purple { color: var(--primary-color); transition: color 0.3s; }
+        .stat-card .number.red { color: #ff3b30; }
+        .stat-card .label {
+            font-size: 10px;
+            color: var(--text-secondary);
+            margin-top: 1px;
+            transition: color 0.3s;
+            white-space: nowrap;
+        }
+        .stat-card .sub-label {
+            font-size: 7px;
+            color: var(--text-secondary);
+            margin-top: 2px;
+            opacity: 0.6;
+            line-height: 1.2;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 100%;
+            transition: opacity 0.3s;
+        }
+        .stat-card.main-card {
+            border: 2px solid var(--primary-color);
+            background: var(--chip-bg);
+        }
+        .stat-card.main-card .number {
+            font-size: 26px;
+        }
+
+        /* HOVER ЭФФЕКТЫ */
+        .stat-card:not(.main-card):hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+            border-color: var(--primary-color);
+        }
+        .stat-card.main-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            background: var(--border-color);
+        }
+        .stat-card:not(.main-card):hover .sub-label {
+            opacity: 1;
+        }
+        .stat-card:not(.main-card):hover .number {
+            transform: scale(1.05);
+        }
+
+        /* Активная карточка */
+        .stat-card.active {
+            border: 2px solid var(--primary-color) !important;
+            background: var(--chip-bg);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .stat-card.active .number {
+            transform: scale(1.05);
+        }
+        .stat-card.active .sub-label {
+            opacity: 1;
+        }
+        .stat-card.main-card.active {
+            background: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+        .stat-card.main-card.active .number,
+        .stat-card.main-card.active .label,
+        .stat-card.main-card.active .sub-label {
+            color: white;
+        }
+
+        /* ===== STATS SECTION (Status List + Chart) ===== */
+        .stats-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .stats-list {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 1px 3px var(--shadow-color);
+            transition: background 0.3s, border-color 0.3s;
+        }
+        .stats-list-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .stats-list-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        .stats-list-subtitle {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        .stats-list-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 0;
+            border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .stats-list-item:hover {
+            background: var(--chip-bg);
+            margin: 0 -8px;
+            padding: 6px 8px;
+            border-radius: 6px;
+        }
+        .stats-list-item .label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: var(--text-primary);
+        }
+        .stats-list-item .label .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            flex-shrink: 0;
+        }
+        .stats-list-item .count {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        .stats-list-item .count .pct-small {
+            font-weight: 400;
+            color: var(--text-secondary);
+            font-size: 11px;
+        }
+        .stats-list-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-top: 10px;
+            margin-top: 6px;
+            border-top: 1px solid var(--border-color);
+        }
+        .stats-list-footer .total-label {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+        .stats-list-footer .total-number {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .stats-chart {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 1px 3px var(--shadow-color);
+            position: relative;
+            transition: background 0.3s, border-color 0.3s;
+        }
+        .stats-chart-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 12px;
+        }
+        .chart-container {
+            position: relative;
+            height: 200px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .chart-container canvas {
+            max-width: 100%;
+            max-height: 100%;
+        }
+        .chart-center-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            pointer-events: none;
+        }
+        .chart-center-text .big {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+        .chart-center-text .small {
+            font-size: 11px;
+            color: var(--text-secondary);
+            display: block;
+        }
+        .chart-legend {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 8px 16px;
+            margin-top: 12px;
+        }
+        .chart-legend-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            color: var(--text-primary);
+        }
+        .chart-legend-item .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            flex-shrink: 0;
+        }
+        .chart-legend-item .pct {
+            color: var(--text-secondary);
+            font-size: 10px;
+        }
+
+        /* ===== AVERAGE REPAIRS BY DAY ===== */
+        .chart-card {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 1px 3px var(--shadow-color);
+            margin-bottom: 20px;
+            transition: background 0.3s, border-color 0.3s;
+        }
+        .chart-card .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .chart-card .chart-header h3 {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin: 0;
+        }
+        .chart-card .chart-header .avg-display {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        .chart-card .chart-header .avg-display strong {
+            color: var(--text-primary);
+        }
+        .chart-card .chart-container {
+            height: 220px;
+        }
+        .chart-fallback {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: var(--text-secondary);
+            font-size: 14px;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .chart-fallback .icon { font-size: 40px; }
+
+        /* ===== FILTER BAR ===== */
+        .filter-bar {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+            align-items: center;
+            background: var(--bg-card);
+            padding: 12px 16px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            transition: background 0.3s, border-color 0.3s;
+        }
+        .filter-bar .preset-btns {
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap;
+        }
+        .filter-bar .preset-btns .btn {
+            font-size: 11px;
+            padding: 4px 10px;
+        }
+        .filter-bar .preset-btns .btn.active {
+            background: var(--primary-color);
+            color: white;
+        }
+        .filter-bar input[type="date"] {
+            padding: 6px 10px;
+            border: 1px solid var(--input-border);
+            border-radius: 6px;
+            font-size: 13px;
+            background: var(--bg-input);
+            color: var(--text-primary);
+            transition: background 0.3s, color 0.3s, border-color 0.3s;
+        }
+        .filter-bar input[type="date"]:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+        .filter-bar select {
+            padding: 6px 10px;
+            border: 1px solid var(--input-border);
+            border-radius: 6px;
+            font-size: 13px;
+            background: var(--bg-input);
+            color: var(--text-primary);
+            transition: background 0.3s, color 0.3s, border-color 0.3s;
+        }
+        .filter-bar select:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+        .filter-bar .date-label {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+        .filter-bar .date-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        /* ===== SEARCH ===== */
+        .search-bar {
+            margin-bottom: 16px;
+        }
+        .search-bar input {
+            width: 100%;
+            padding: 10px 16px;
+            border-radius: 10px;
+            border: 1px solid var(--input-border);
+            background: var(--bg-input);
+            color: var(--text-primary);
+            font-size: 14px;
+            outline: none;
+            transition: all 0.3s ease;
+        }
+        .search-bar input:focus {
+            border-color: var(--primary-color);
+        }
+        .search-bar input::placeholder {
+            color: var(--text-secondary);
+            opacity: 0.7;
+        }
+
+        /* ===== TABLE ===== */
+        .table-container {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 1px 3px var(--shadow-color);
+            overflow-x: auto;
+            transition: background 0.3s, border-color 0.3s;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        th {
+            text-align: left;
+            padding: 8px 12px;
+            background: var(--chip-bg);
+            font-weight: 600;
+            color: var(--text-primary);
+            border-bottom: 2px solid var(--border-color);
+            transition: background 0.3s, color 0.3s, border-color 0.3s;
+        }
+        td {
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-primary);
+            transition: border-color 0.3s, color 0.3s;
+        }
+        tr:hover td { background: var(--chip-bg); }
+        .order-link {
+            color: var(--primary-color);
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.3s;
+        }
+        .order-link:hover { text-decoration: underline; }
+        .status-badge {
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 500;
+            display: inline-block;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 30px;
+            color: var(--text-secondary);
+        }
+        .empty-state .icon { font-size: 40px; margin-bottom: 8px; }
+
+        /* ===== PAGINATION ===== */
+        .pagination {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 16px;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .pagination .total {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+        .pagination .controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .pagination .controls button {
+            padding: 6px 14px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            background: var(--bg-card);
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .pagination .controls button:hover:not(:disabled) {
+            background: var(--chip-bg);
+        }
+        .pagination .controls button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        .pagination .controls .page-info {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+        .pagination .controls select {
+            padding: 6px 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            background: var(--bg-card);
+            color: var(--text-primary);
+            font-size: 13px;
+            cursor: pointer;
+        }
+
+        /* ===== RESPONSIVE ===== */
+        @media (max-width: 900px) {
+            .stats-section {
+                grid-template-columns: 1fr;
+            }
+            .stats-grid {
+                grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            }
+        }
+        @media (max-width: 600px) {
+            body { padding: 12px; }
+            .stats-grid { grid-template-columns: repeat(3, 1fr); }
+            .header { flex-direction: column; align-items: stretch; }
+            .header-actions { justify-content: center; }
+            .filter-bar { flex-direction: column; align-items: stretch; }
+            .filter-bar .preset-btns { justify-content: center; }
+            .pagination { flex-direction: column; align-items: stretch; text-align: center; }
+            .pagination .controls { justify-content: center; flex-wrap: wrap; }
+        }
+
+        body.dark .header-left img {
+            /* Иконка без фильтра */
+        }
+        body.dark .btn-success { background: #2db84e; }
+        body.dark .btn-danger { background: #e6352a; }
+        body.dark .stats-list-item:hover { background: var(--border-color); }
+        body.dark tr:hover td { background: var(--border-color); }
+        body.dark .pagination .controls button { background: var(--bg-primary); }
+        body.dark .stat-card.main-card {
+            background: var(--border-color);
+            border-color: var(--primary-color);
+        }
+        body.dark .stat-card:not(.main-card):hover {
+            border-color: var(--primary-color);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        body.dark .stat-card.active {
+            background: var(--border-color);
+        }
+        body.dark .stat-card.main-card.active {
+            background: var(--primary-color);
+        }
+        body.dark .stat-card.main-card.active .number,
+        body.dark .stat-card.main-card.active .label,
+        body.dark .stat-card.main-card.active .sub-label {
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <!-- ===== HEADER ===== -->
+    <div class="header">
+        <div class="header-left">
+            <img src="fixIco/fixModIco_32.png" alt="FixMod">
+            <div>
+                <h1>📊 Statistics</h1>
+                <span>FixMod — local data</span>
+            </div>
+        </div>
+        <div class="header-actions">
+            <button class="btn" id="refresh-btn">🔄 Refresh</button>
+        </div>
+    </div>
+
+    <!-- ===== STATS CARDS ===== -->
+    <div class="stats-grid" id="stats-grid">
+        <!-- Заполняется через JS -->
+    </div>
+
+    <!-- ===== STATS SECTION (Status List + Chart) ===== -->
+    <div class="stats-section">
+        <div class="stats-list">
+            <div class="stats-list-header">
+                <div class="stats-list-title">📊 Status overview</div>
+                <div class="stats-list-subtitle" id="statsSubtitle">All orders</div>
+            </div>
+            <div id="statsListContainer">
+                <div style="text-align:center;padding:20px;color:var(--text-secondary);font-size:13px;">Loading...</div>
+            </div>
+        </div>
+        <div class="stats-chart">
+            <div class="stats-chart-title">📈 Distribution</div>
+            <div class="chart-container">
+                <canvas id="statusChart"></canvas>
+                <div class="chart-center-text">
+                    <span class="big" id="chartTotal">0</span>
+                    <span class="small">total orders</span>
+                </div>
+                <div class="chart-fallback" id="statusFallback" style="display:none;">
+                    <div class="icon">📊</div>
+                    <div>Chart unavailable</div>
+                </div>
+            </div>
+            <div class="chart-legend" id="chartLegend"></div>
+        </div>
+    </div>
+
+    <!-- ===== AVERAGE REPAIRS BY DAY ===== -->
+    <div class="chart-card">
+        <div class="chart-header">
+            <h3>📊 Average repairs by day</h3>
+            <div class="avg-display">
+                Average: <strong id="dailyAvg">0.0</strong>
+            </div>
+        </div>
+        <div class="chart-container">
+            <canvas id="dailyChart"></canvas>
+            <div class="chart-fallback" id="dailyFallback" style="display:none;">
+                <div class="icon">📊</div>
+                <div>Chart unavailable</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== FILTERS ===== -->
+    <div class="filter-bar">
+        <div class="preset-btns">
+            <button class="btn btn-sm active" data-preset="1">24h</button>
+            <button class="btn btn-sm" data-preset="7">7d</button>
+            <button class="btn btn-sm" data-preset="14">14d</button>
+            <button class="btn btn-sm" data-preset="30">30d</button>
+            <button class="btn btn-sm" data-preset="90">90d</button>
+            <button class="btn btn-sm" id="clear-date-btn">✕ Clear</button>
+        </div>
+        <div class="date-group">
+            <span class="date-label">From</span>
+            <input type="date" id="date-from">
+        </div>
+        <div class="date-group">
+            <span class="date-label">To</span>
+            <input type="date" id="date-to">
+        </div>
+        <button class="btn btn-sm" id="apply-date-btn">Apply</button>
+        <select id="status-filter">
+            <option value="">All statuses</option>
+            <option value="ready">✅ Ready for pickup</option>
+            <option value="cancelled">❌ No repair</option>
+            <option value="handling">🔧 In handling</option>
+            <option value="parts">⏳ Awaiting parts</option>
+            <option value="customer">👤 Customer</option>
+            <option value="repair">🔬 Repair centre</option>
+            <option value="unknown">❓ Unknown</option>
+        </select>
+        <button class="btn btn-sm" id="reset-filters-btn">Reset</button>
+    </div>
+
+    <!-- ===== SEARCH ===== -->
+    <div class="search-bar">
+        <input type="text" id="search-input" placeholder="🔍 Search by order number, device model, IMEI...">
+    </div>
+
+    <!-- ===== TABLE ===== -->
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Order #</th>
+                    <th>Device</th>
+                    <th>Status</th>
+                    <th>Diagnosis</th>
+                    <th>Date</th>
+                </tr>
+            </thead>
+            <tbody id="orders-table">
+                <tr>
+                    <td colspan="5">
+                        <div class="empty-state">
+                            <div class="icon">⏳</div>
+                            <div>Loading orders...</div>
+                        </div>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+        <div class="pagination">
+            <span class="total" id="orders-count">Total: 0 orders</span>
+            <div class="controls">
+                <button id="prev-page" disabled>←</button>
+                <span class="page-info" id="page-info">Page 1 of 1</span>
+                <button id="next-page">→</button>
+                <select id="page-size">
+                    <option value="10">10</option>
+                    <option value="25" selected>25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <script src="chart.min.js"></script>
+    <script src="stats.js"></script>
+</body>
+</html>
