@@ -167,44 +167,69 @@ function formatDateTime(dateString) {
 }
 
 // ============================================================
-// 4. ПРЕСЕТЫ ДАТ
+// 4. ПРЕСЕТЫ ДАТ (С ЛОКАЛЬНЫМ ВРЕМЕНЕМ)
 // ============================================================
 function getPresetDates(preset) {
     const today = new Date();
-    const from = new Date();
-    const to = new Date();
+    
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    const todayStr = `${year}-${month}-${day}`;
+    
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    const yYear = yesterday.getFullYear();
+    const yMonth = String(yesterday.getMonth() + 1).padStart(2, '0');
+    const yDay = String(yesterday.getDate()).padStart(2, '0');
+    const yesterdayStr = `${yYear}-${yMonth}-${yDay}`;
+    
+    const sevenDaysAgo = new Date(today);
+    sevenDaysAgo.setDate(today.getDate() - 6);
+    const sYear = sevenDaysAgo.getFullYear();
+    const sMonth = String(sevenDaysAgo.getMonth() + 1).padStart(2, '0');
+    const sDay = String(sevenDaysAgo.getDate()).padStart(2, '0');
+    const sevenDaysStr = `${sYear}-${sMonth}-${sDay}`;
+    
+    const thirtyDaysAgo = new Date(today);
+    thirtyDaysAgo.setDate(today.getDate() - 29);
+    const tYear = thirtyDaysAgo.getFullYear();
+    const tMonth = String(thirtyDaysAgo.getMonth() + 1).padStart(2, '0');
+    const tDay = String(thirtyDaysAgo.getDate()).padStart(2, '0');
+    const thirtyDaysStr = `${tYear}-${tMonth}-${tDay}`;
     
     switch(preset) {
         case 'today':
-            from.setHours(0,0,0,0);
-            to.setHours(23,59,59,999);
-            break;
-        case 'week':
-            from.setDate(today.getDate() - 7);
-            from.setHours(0,0,0,0);
-            to.setHours(23,59,59,999);
-            break;
-        case 'month':
-            from.setDate(today.getDate() - 30);
-            from.setHours(0,0,0,0);
-            to.setHours(23,59,59,999);
-            break;
+            return {
+                from: todayStr,
+                to: todayStr
+            };
+        case 'yesterday':
+            return {
+                from: yesterdayStr,
+                to: yesterdayStr
+            };
+        case '7d':
+            return {
+                from: sevenDaysStr,
+                to: todayStr
+            };
+        case '30d':
+            return {
+                from: thirtyDaysStr,
+                to: todayStr
+            };
         case 'all':
         default:
-            from.setFullYear(2000, 0, 1);
-            from.setHours(0,0,0,0);
-            to.setHours(23,59,59,999);
-            break;
+            return {
+                from: '2000-01-01',
+                to: todayStr
+            };
     }
-    
-    return {
-        from: from.toISOString().slice(0,10),
-        to: to.toISOString().slice(0,10)
-    };
 }
 
 // ============================================================
-// 5. ФИЛЬТРАЦИЯ
+// 5. ФИЛЬТРАЦИЯ ПО ДАТЕ
 // ============================================================
 function applyDateFilter(orders) {
     if (!orders) return [];
@@ -219,6 +244,8 @@ function applyDateFilter(orders) {
         const now = new Date();
         const threshold = new Date(now);
         threshold.setDate(threshold.getDate() - parseInt(currentDays));
+        threshold.setHours(0, 0, 0, 0);
+        
         filtered = filtered.filter(order => {
             const orderDate = getOrderDateForFilter(order);
             if (!orderDate) return false;
@@ -231,30 +258,18 @@ function applyDateFilter(orders) {
         const from = new Date(currentDateFrom);
         from.setHours(0, 0, 0, 0);
         
-        const isSingleDay = currentDateTo && currentDateFrom === currentDateTo;
-        
-        if (isSingleDay) {
-            const to = new Date(currentDateFrom);
-            to.setHours(23, 59, 59, 999);
-            filtered = filtered.filter(order => {
-                const orderDate = getOrderDateForFilter(order);
-                if (!orderDate) return false;
-                const changeDate = new Date(orderDate);
-                return changeDate >= from && changeDate <= to;
-            });
-        } else {
-            filtered = filtered.filter(order => {
-                const orderDate = getOrderDateForFilter(order);
-                if (!orderDate) return false;
-                const changeDate = new Date(orderDate);
-                return changeDate >= from;
-            });
-        }
+        filtered = filtered.filter(order => {
+            const orderDate = getOrderDateForFilter(order);
+            if (!orderDate) return false;
+            const changeDate = new Date(orderDate);
+            return changeDate >= from;
+        });
     }
 
-    if (currentDateTo && currentDateFrom !== currentDateTo) {
+    if (currentDateTo) {
         const to = new Date(currentDateTo);
         to.setHours(23, 59, 59, 999);
+        
         filtered = filtered.filter(order => {
             const orderDate = getOrderDateForFilter(order);
             if (!orderDate) return false;
@@ -266,25 +281,25 @@ function applyDateFilter(orders) {
     return filtered;
 }
 
-// Функция обновления данных при изменении фильтров
+// ============================================================
+// 6. ОСНОВНАЯ ФУНКЦИЯ ФИЛЬТРАЦИИ
+// ============================================================
 function filterOrders() {
     const search = document.getElementById('search-input')?.value.toLowerCase().trim() || '';
     const statusFilter = document.getElementById('status-filter')?.value || '';
     
     let filtered = [...allOrders];
     
-    // Фильтр по дате
     filtered = applyDateFilter(filtered);
     
-    // Фильтр по статусу (группа)
-    if (statusFilter) {
+    const activeGroup = currentGroup || statusFilter;
+    if (activeGroup) {
         filtered = filtered.filter(order => {
             const group = getStatusGroup(order.status_code, order.status);
-            return group === statusFilter;
+            return group === activeGroup;
         });
     }
     
-    // Поиск
     if (search) {
         filtered = filtered.filter(order => {
             const searchable = [
@@ -302,17 +317,23 @@ function filterOrders() {
     currentPage = 1;
     
     renderTable();
-    // Обновляем статус-лист и диаграмму (только при дата-фильтре, но они используют dateFilteredOrders)
     updateStatusList();
     updateStatusChart();
     updateDailyChart();
+    updateStatsCards();
 }
 
 // ============================================================
-// 6. КАРТОЧКИ СТАТИСТИКИ (ВСЕГДА ПО ВСЕМ ЗАКАЗАМ)
+// 7. КАРТОЧКИ СТАТИСТИКИ (All Orders - всегда все заказы, остальные - по дата-фильтру)
 // ============================================================
 function updateStatsCards() {
-    const statsSource = allOrders || [];
+    // 1. All Orders - всегда показывает ВСЕ заказы (allOrders)
+    const allStatsSource = allOrders;
+    const allStatsSourceLength = allStatsSource.length;
+    
+    // 2. Остальные карточки - по дата-фильтру
+    const dateFiltered = applyDateFilter(allOrders);
+    const statsSource = dateFiltered;
     const groupedStats = {};
 
     statsSource.forEach(order => {
@@ -329,15 +350,17 @@ function updateStatsCards() {
 
     let html = '';
 
+    // All Orders - всегда показывает общее количество
     const isAllActive = currentGroup === '';
     html += `
         <div class="stat-card main-card ${isAllActive ? 'active' : ''}" data-group="" style="cursor:pointer;">
-            <div class="number">${statsSource.length || 0}</div>
+            <div class="number">${allStatsSourceLength || 0}</div>
             <div class="label">All Orders</div>
             <div class="sub-label">Total</div>
         </div>
     `;
 
+    // Остальные карточки - по дата-фильтру
     const orderList = ['ready', 'cancelled', 'handling', 'parts', 'customer', 'repair', 'unknown'];
 
     orderList.forEach(group => {
@@ -370,7 +393,7 @@ function updateStatsCards() {
 }
 
 // ============================================================
-// 7. СТАТУС ЛИСТ (ПО ДАТА-ФИЛЬТРУ)
+// 8. СТАТУС ЛИСТ (ПО ДАТА-ФИЛЬТРУ)
 // ============================================================
 function updateStatusList() {
     const colors = STATUS_COLORS;
@@ -378,7 +401,6 @@ function updateStatusList() {
     const orderList = STATUS_ORDER;
     const stats = {};
 
-    // Используем orders с учетом дата-фильтра
     const dateFiltered = applyDateFilter(allOrders);
     
     dateFiltered.forEach(order => {
@@ -438,7 +460,7 @@ function updateStatusList() {
 }
 
 // ============================================================
-// 8. КРУГОВАЯ ДИАГРАММА (ПО ДАТА-ФИЛЬТРУ)
+// 9. КРУГОВАЯ ДИАГРАММА (ПО ДАТА-ФИЛЬТРУ)
 // ============================================================
 function updateStatusChart() {
     if (!chartJsAvailable) {
@@ -538,7 +560,7 @@ function updateStatusChart() {
 }
 
 // ============================================================
-// 9. ГРАФИК AVERAGE REPAIRS BY DAY (ПО ДАТА-ФИЛЬТРУ)
+// 10. ГРАФИК AVERAGE REPAIRS BY DAY (ПО ДАТА-ФИЛЬТРУ)
 // ============================================================
 function updateDailyChart() {
     if (!chartJsAvailable) {
@@ -761,7 +783,7 @@ function updateDailyChart() {
 }
 
 // ============================================================
-// 10. ТАБЛИЦА С ПАГИНАЦИЕЙ
+// 11. ТАБЛИЦА С ПАГИНАЦИЕЙ
 // ============================================================
 function renderTable() {
     const tbody = document.getElementById('orders-table');
@@ -858,18 +880,30 @@ function changeLimit() {
 }
 
 // ============================================================
-// 11. ФИЛЬТР ПО ГРУППЕ (только статус-фильтр)
+// 12. ФИЛЬТР ПО ГРУППЕ (ОБНОВЛЕННЫЙ)
 // ============================================================
 function filterByGroup(group) {
     const statusFilter = document.getElementById('status-filter');
     
     if (group === '') {
+        // All Orders - сбрасываем ВСЕ фильтры: и статус, и дату
         statusFilter.value = '';
         currentGroup = '';
-    } else if (statusFilter.value === group) {
+        
+        // Сбрасываем дата-фильтр
+        currentDateFrom = '';
+        currentDateTo = '';
+        currentDays = '';
+        document.getElementById('date-from').value = '';
+        document.getElementById('date-to').value = '';
+        document.querySelectorAll('[data-preset]').forEach(b => b.classList.remove('active'));
+        
+    } else if (statusFilter.value === group || currentGroup === group) {
+        // Если уже выбран этот статус — снимаем фильтр (но дату НЕ сбрасываем)
         statusFilter.value = '';
         currentGroup = '';
     } else {
+        // Выбираем группу (дату НЕ сбрасываем)
         statusFilter.value = group;
         currentGroup = group;
     }
@@ -878,7 +912,7 @@ function filterByGroup(group) {
 }
 
 // ============================================================
-// 12. ЗАГРУЗКА ДАННЫХ
+// 13. ЗАГРУЗКА ДАННЫХ
 // ============================================================
 async function loadOrders() {
     return new Promise((resolve) => {
@@ -891,7 +925,6 @@ async function loadOrders() {
                 filteredOrders = [...allOrders];
                 visibleOrders = [...allOrders];
                 
-                // Обновляем все компоненты
                 updateStatsCards();
                 updateStatusList();
                 updateStatusChart();
@@ -906,7 +939,7 @@ async function loadOrders() {
 }
 
 // ============================================================
-// 13. ОБНОВЛЕНИЕ
+// 14. ОБНОВЛЕНИЕ
 // ============================================================
 async function refreshStats() {
     await loadOrders();
@@ -929,7 +962,7 @@ function resetFilters() {
 }
 
 // ============================================================
-// 14. ТЕМНАЯ ТЕМА
+// 15. ТЕМНАЯ ТЕМА
 // ============================================================
 async function loadDarkMode() {
     try {
@@ -963,7 +996,7 @@ function updateChartsTheme(isDark) {
 }
 
 // ============================================================
-// 15. ИНИЦИАЛИЗАЦИЯ
+// 16. ИНИЦИАЛИЗАЦИЯ
 // ============================================================
 document.addEventListener('DOMContentLoaded', async () => {
     await loadDarkMode();
@@ -988,15 +1021,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         btn.addEventListener('click', function() {
             document.querySelectorAll('[data-preset]').forEach(b => b.classList.remove('active'));
             this.classList.add('active');
-            const days = parseInt(this.dataset.preset);
-            const today = new Date();
-            const from = new Date();
-            from.setDate(today.getDate() - days);
-            document.getElementById('date-from').value = from.toISOString().slice(0,10);
-            document.getElementById('date-to').value = today.toISOString().slice(0,10);
-            currentDateFrom = from.toISOString().slice(0,10);
-            currentDateTo = today.toISOString().slice(0,10);
+            
+            const dates = getPresetDates(this.dataset.preset);
+            document.getElementById('date-from').value = dates.from;
+            document.getElementById('date-to').value = dates.to;
+            
+            currentDateFrom = dates.from;
+            currentDateTo = dates.to;
             currentDays = '';
+            
             filterOrders();
         });
     });
@@ -1032,6 +1065,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 // ============================================================
-// 16. АВТООБНОВЛЕНИЕ
+// 17. АВТООБНОВЛЕНИЕ
 // ============================================================
 setInterval(refreshStats, 60000);

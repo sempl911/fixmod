@@ -69,7 +69,6 @@ async function saveOrderToDB(orderData) {
             let hasChanges = false;
             
             if (existing) {
-                // Проверяем, изменился ли статус или другие важные поля
                 if (existing.status !== orderData.status) hasChanges = true;
                 if (existing.technician !== orderData.technician) hasChanges = true;
                 if (existing.resolution !== orderData.resolution) hasChanges = true;
@@ -121,7 +120,6 @@ async function saveOrderToDB(orderData) {
             transaction.oncomplete = async () => {
                 await updateStatistics();
                 await updateBadge();
-                // Бэкап создается отдельно, не при каждом сохранении
                 resolve(id);
             };
             
@@ -278,7 +276,6 @@ async function clearAllData() {
 // === ДВОЙНОЙ АВТОМАТИЧЕСКИЙ БЭКАП ===
 // ============================================================
 
-// 1. Бэкап в папку загрузок (исправлено для Service Worker)
 async function backupToFolder() {
     try {
         const orders = await getAllOrders();
@@ -298,8 +295,6 @@ async function backupToFolder() {
         };
         
         const json = JSON.stringify(data, null, 2);
-        
-        // Используем Blob и FileReader (работает в Service Worker)
         const blob = new Blob([json], { type: 'application/json' });
         const reader = new FileReader();
         
@@ -309,7 +304,6 @@ async function backupToFolder() {
                     const dataUrl = reader.result;
                     const dateStr = new Date().toISOString().slice(0, 10);
                     
-                    // Сохраняем latest.json
                     await chrome.downloads.download({
                         url: dataUrl,
                         filename: `FixModDB/latest.json`,
@@ -317,7 +311,6 @@ async function backupToFolder() {
                         conflictAction: 'overwrite'
                     });
                     
-                    // Архивируем с датой раз в день
                     const storageResult = await chrome.storage.local.get(['fixmod_last_backup_date']);
                     
                     if (storageResult.fixmod_last_backup_date !== dateStr) {
@@ -351,7 +344,6 @@ async function backupToFolder() {
     }
 }
 
-// 2. Бэкап в chrome.storage.local
 async function backupToStorage() {
     try {
         const orders = await getAllOrders();
@@ -384,7 +376,6 @@ async function backupToStorage() {
     }
 }
 
-// 3. ДВОЙНОЙ БЭКАП
 async function doubleBackup() {
     console.log('🔄 Creating manual backup...');
     
@@ -582,6 +573,85 @@ async function importDataInternal(data) {
 }
 
 // ============================================================
+// === ПОЛУЧЕНИЕ ПУТИ ДЛЯ СКАЧИВАНИЯ ===
+// ============================================================
+
+function getDownloadPath() {
+    return new Promise((resolve) => {
+        chrome.storage.sync.get(['downloadPath'], (result) => {
+            resolve(result.downloadPath || '');
+        });
+    });
+}
+
+// ============================================================
+// === СКАЧИВАНИЕ ФОТО ===
+// ============================================================
+
+function getDirectImageUrl(url) {
+    if (!url) return null;
+    
+    if (url.startsWith('http') && url.includes('amazonaws.com')) {
+        return url;
+    }
+    
+    const match = url.match(/key=([^&]+)/);
+    if (match) {
+        return `https://evy.fixably.com/en/files?key=${match[1]}&type=private`;
+    }
+    
+    return url;
+}
+
+async function downloadPhoto(url, filename) {
+    return new Promise(async (resolve, reject) => {
+        const directUrl = getDirectImageUrl(url);
+        if (!directUrl) {
+            reject(new Error('Failed to get direct URL'));
+            return;
+        }
+        
+        console.log('📥 Background: Downloading photo:', directUrl);
+        
+        try {
+            new URL(directUrl);
+        } catch (e) {
+            reject(new Error('Invalid URL: ' + directUrl));
+            return;
+        }
+        
+        // Получаем путь для скачивания
+        const downloadPath = await getDownloadPath();
+        let filenameOnly = filename || 'photo.jpg';
+        
+        // Формируем полный путь для chrome.downloads
+        let fullPath = filenameOnly;
+        if (downloadPath) {
+            // Убираем лишние слеши
+            const cleanPath = downloadPath.replace(/\/+$/, '');
+            fullPath = `${cleanPath}/${filenameOnly}`;
+        }
+        
+        console.log('📥 Downloading to:', fullPath);
+        
+        chrome.downloads.download({
+            url: directUrl,
+            filename: fullPath,
+            saveAs: false,
+            conflictAction: 'uniquify'
+        }, (downloadId) => {
+            if (chrome.runtime.lastError) {
+                console.error('❌ Background: Download error:', chrome.runtime.lastError);
+                reject(new Error(chrome.runtime.lastError.message));
+            } else {
+                console.log('✅ Background: Download started with ID:', downloadId);
+                resolve({ success: true, downloadId: downloadId, filename: fullPath });
+            }
+        });
+    });
+}
+
+// ============================================================
 // === ОБРАБОТКА СООБЩЕНИЙ ===
 // ============================================================
 
@@ -707,7 +777,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             'widgetTheme', 
             'widgetFontSize',
             'qrEnabled',
-            'apiUrl'
+            'apiUrl',
+            'suggestionsEnabled',
+            'widgetEnabled',
+            'downloadPath'
         ], (result) => {
             sendResponse(result);
         });
@@ -757,6 +830,69 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     
     // ============================================================
+    // === ВЫБОР ПАПКИ ===
+    // ============================================================
+    
+    if (request.type === 'CHOOSE_FOLDER') {
+        getDownloadPath().then(path => {
+            sendResponse({ 
+                success: true, 
+                path: path,
+                message: 'Enter folder path manually in the input field'
+            });
+        });
+        return true;
+    }
+    
+    // ============================================================
+    // === СКАЧИВАНИЕ ФОТО ===
+    // ============================================================
+    
+    if (request.type === 'DOWNLOAD_PHOTO') {
+        console.log('📥 Download photo request:', request.url);
+        
+        downloadPhoto(request.url, request.filename)
+            .then(result => {
+                sendResponse({ success: true, data: result });
+            })
+            .catch(error => {
+                console.error('❌ Download failed:', error);
+                sendResponse({ success: false, error: error.message });
+            });
+        return true;
+    }
+    
+    if (request.type === 'DOWNLOAD_MULTIPLE_PHOTOS') {
+        console.log('📥 Download multiple photos:', request.photos?.length || 0);
+        
+        const photos = request.photos || [];
+        const results = [];
+        
+        Promise.all(photos.map(async (photo, index) => {
+            try {
+                const filename = photo.filename || `photo_${index + 1}.jpg`;
+                const result = await downloadPhoto(photo.url, filename);
+                results.push({ success: true, url: photo.url });
+            } catch (error) {
+                results.push({ success: false, url: photo.url, error: error.message });
+            }
+        }))
+        .then(() => {
+            sendResponse({ 
+                success: true, 
+                results: results,
+                total: results.length,
+                successful: results.filter(r => r.success).length
+            });
+        })
+        .catch(error => {
+            sendResponse({ success: false, error: error.message });
+        });
+        
+        return true;
+    }
+    
+    // ============================================================
     // === НОВЫЕ ОБРАБОТЧИКИ ДЛЯ ГЛОБАЛЬНОЙ ТЕМЫ ===
     // ============================================================
     
@@ -789,23 +925,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // === ПЕРИОДИЧЕСКОЕ ОБНОВЛЕНИЕ ===
 // ============================================================
 
-// Обновление бейджа каждые 5 минут
 setInterval(() => {
     updateBadge();
 }, 300000);
 
-// Проверка соединения каждые 15 секунд
 setInterval(() => {
     checkServerConnection();
 }, 15000);
 
-// Бэкап раз в 6 часов (вместо 30 минут)
 setInterval(async () => {
     console.log('🔄 Scheduled backup (every 6 hours)...');
     await doubleBackup();
 }, 6 * 60 * 60 * 1000);
 
-// Бэкап при закрытии браузера
 chrome.runtime.onSuspend.addListener(async () => {
     console.log('🔄 Browser closing, creating backup...');
     await doubleBackup();

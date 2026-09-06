@@ -1,7 +1,6 @@
 // settings.js - FixMod Settings Page
 
 document.addEventListener('DOMContentLoaded', async () => {
-    // Устанавливаем иконку
     const iconUrl = chrome.runtime.getURL('fixIco/fixModIco_32.png');
     document.getElementById('settings-icon').src = iconUrl;
     
@@ -56,6 +55,67 @@ document.addEventListener('DOMContentLoaded', async () => {
         sendToWidget({ type: 'UPDATE_QR_ENABLED', enabled: enabled });
     });
     
+    document.getElementById('suggestions-toggle').addEventListener('change', function() {
+        const enabled = this.checked;
+        chrome.storage.sync.set({ suggestionsEnabled: enabled });
+        saveSetting('suggestionsEnabled', enabled);
+        sendToWidget({ type: 'UPDATE_SUGGESTIONS', enabled: enabled });
+        showToast(enabled ? '💡 Suggestions enabled' : '💡 Suggestions disabled');
+    });
+    
+    document.getElementById('widget-toggle').addEventListener('change', function() {
+        const enabled = this.checked;
+        chrome.storage.sync.set({ widgetEnabled: enabled });
+        saveSetting('widgetEnabled', enabled);
+        sendToWidget({ type: 'UPDATE_WIDGET', enabled: enabled });
+        showToast(enabled ? '📊 Widget enabled' : '📊 Widget disabled');
+    });
+    
+    // ============================================================
+    // === НАСТРОЙКА ПУТИ ДЛЯ СКАЧИВАНИЯ ФОТО ===
+    // ============================================================
+    
+    const downloadPathInput = document.getElementById('download-path');
+    const currentPathValue = document.getElementById('current-path-value');
+    
+    // Сохраняем путь при изменении (по Enter или потере фокуса)
+    function saveDownloadPath() {
+        const path = downloadPathInput.value.trim();
+        chrome.storage.sync.set({ downloadPath: path });
+        saveSetting('downloadPath', path);
+        currentPathValue.textContent = path || 'Downloads/FixModPhotos/';
+        showToast(path ? '📁 Download folder saved: ' + path : '📁 Reset to default');
+        console.log('📁 Download path saved:', path || 'default');
+    }
+    
+    downloadPathInput.addEventListener('change', saveDownloadPath);
+    downloadPathInput.addEventListener('blur', saveDownloadPath);
+    
+    // Сохраняем по Enter
+    downloadPathInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            this.blur();
+        }
+    });
+    
+    // Кнопка сброса
+    document.getElementById('reset-download-path').addEventListener('click', function() {
+        downloadPathInput.value = '';
+        chrome.storage.sync.set({ downloadPath: '' });
+        saveSetting('downloadPath', '');
+        currentPathValue.textContent = 'Downloads/FixModPhotos/';
+        showToast('↩️ Reset to default');
+        console.log('📁 Download path reset to default');
+    });
+    
+    // Загружаем путь при открытии
+    chrome.storage.sync.get(['downloadPath'], (result) => {
+        const path = result.downloadPath || '';
+        downloadPathInput.value = path;
+        currentPathValue.textContent = path || 'Downloads/FixModPhotos/';
+    });
+    
     document.getElementById('export-btn').addEventListener('click', exportData);
     document.getElementById('import-btn').addEventListener('click', () => {
         document.getElementById('import-file-input').click();
@@ -102,6 +162,12 @@ async function loadAllSettings() {
                 
                 const qrEnabled = result.qrEnabled !== undefined ? result.qrEnabled : true;
                 document.getElementById('qr-toggle').checked = qrEnabled;
+                
+                const suggestionsEnabled = result.suggestionsEnabled !== undefined ? result.suggestionsEnabled : true;
+                document.getElementById('suggestions-toggle').checked = suggestionsEnabled;
+                
+                const widgetEnabled = result.widgetEnabled !== undefined ? result.widgetEnabled : true;
+                document.getElementById('widget-toggle').checked = widgetEnabled;
             }
             resolve();
         });

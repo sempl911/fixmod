@@ -280,6 +280,30 @@
             margin-top: 8px;
             transition: color 0.3s;
         }
+        
+        .input-with-btn {
+            display: flex;
+            gap: 8px;
+            margin-top: 6px;
+        }
+        .input-with-btn input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 13px;
+            background: #ffffff;
+            color: #1a1a2e;
+            transition: background 0.3s, color 0.3s, border-color 0.3s;
+        }
+        .input-with-btn input:focus {
+            outline: none;
+            border-color: #393F49;
+        }
+        .input-with-btn .btn {
+            padding: 8px 14px;
+            white-space: nowrap;
+        }
 
         /* ===== ТЕМНАЯ ТЕМА ===== */
         body.dark {
@@ -359,6 +383,14 @@
         body.dark .btn-primary:hover {
             background: #2c313a;
         }
+        body.dark .input-with-btn input {
+            background: #1C2027;
+            color: #e5e7eb;
+            border-color: #1C2027;
+        }
+        body.dark .input-with-btn input:focus {
+            border-color: #393F49;
+        }
         /* Иконка просто показывается, без фильтров */
     </style>
 </head>
@@ -418,6 +450,56 @@
             </div>
         </div>
     </div>
+
+    <!-- FEATURES -->
+    <div class="section">
+        <div class="section-title">⚡ Features</div>
+
+        <div class="setting-group">
+            <div class="toggle-row">
+                <span>💡 Show suggestions</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="suggestions-toggle" checked>
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+            <div class="setting-description">Quick input suggestions for Diagnosis/Resolution fields</div>
+        </div>
+
+        <div class="setting-group">
+            <div class="toggle-row">
+                <span>📊 Show widget</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="widget-toggle" checked>
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+            <div class="setting-description">Show FixMod widget on order pages</div>
+        </div>
+    </div>
+
+    <!-- PHOTOS DOWNLOAD PATH -->
+<div class="section">
+    <div class="section-title">📸 Photos</div>
+    
+    <div class="setting-group">
+        <label class="setting-label">Download folder</label>
+        <div class="setting-description">Folder where device photos will be saved</div>
+        <div class="input-with-btn">
+            <input type="text" id="download-path" placeholder="e.g. /Users/username/Desktop/Photos/">
+            <button class="btn btn-secondary" id="reset-download-path">↩️ Reset</button>
+        </div>
+        <div style="font-size:11px; color:#6b7280; margin-top:4px; transition:color 0.3s;">
+            📁 Default: Downloads/FixModPhotos/
+        </div>
+        <div style="font-size:11px; color:#6b7280; margin-top:2px; transition:color 0.3s;" id="current-path-display">
+            Current: <span id="current-path-value" style="font-weight:500; color:#393F49;">Downloads/FixModPhotos/</span>
+        </div>
+        <div style="font-size:10px; color:#8e8e93; margin-top:4px; padding:6px 10px; background:var(--chip-bg); border-radius:4px;">
+            💡 Examples: ~/Desktop/Photos/ or /Users/username/Desktop/
+        </div>
+    </div>
+</div>
 
     <!-- DATA -->
     <div class="section">
