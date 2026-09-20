@@ -1,6 +1,7 @@
 // stats.js - FixMod Statistics Page
 
 let allOrders = [];
+let rawAllOrders = [];
 let filteredOrders = [];
 let visibleOrders = [];
 let currentPage = 1;
@@ -13,6 +14,15 @@ let currentDays = '';
 let dailyChart = null;
 let statusChart = null;
 let chartJsAvailable = false;
+let dailyChartType = 'line';
+
+// Календарь
+let customHolidays = new Set();
+let currentCalMonth = new Date();
+
+// 👤 Текущий пользователь
+let currentUser = null;
+let filterByUser = true;
 
 // Проверяем Chart.js
 try {
@@ -23,6 +33,38 @@ try {
 } catch(e) {
     chartJsAvailable = false;
     console.warn('⚠️ Chart.js not available');
+}
+
+// ============================================================
+// 0. ТЕКУЩИЙ ПОЛЬЗОВАТЕЛЬ
+// ============================================================
+
+async function loadCurrentUserFromStorage() {
+    try {
+        const result = await chrome.storage.local.get(['fixmod_current_user']);
+        if (result.fixmod_current_user) {
+            currentUser = result.fixmod_current_user;
+            console.log('👤 Пользователь из storage:', currentUser);
+        } else {
+            console.warn('⚠️ Нет сохранённого пользователя — показываем ВСЕ заказы');
+            filterByUser = false;
+        }
+    } catch (e) {
+        console.warn('⚠️ Не удалось загрузить пользователя:', e);
+        filterByUser = false;
+    }
+}
+
+function applyUserFilter(orders) {
+    if (!filterByUser || !currentUser) {
+        return orders;
+    }
+    
+    return orders.filter(order => {
+        if (order.current_user === currentUser) return true;
+        if (!order.current_user && order.technician === currentUser) return true;
+        return false;
+    });
 }
 
 // ============================================================
@@ -106,44 +148,224 @@ function getGroupMembers(group) {
 }
 
 // ============================================================
-// 2. ПОЛУЧЕНИЕ ДАТЫ ДЛЯ ФИЛЬТРАЦИИ
+// 2. 👇 РАБОЧАЯ ДАТА ЗАКАЗА (КЛЮЧЕВАЯ ФУНКЦИЯ)
 // ============================================================
-function getOrderDateForFilter(order) {
+//
+// Приоритет:
+// 1. Самая свежая резолюция (работа выполнена)
+// 2. Самый свежий диагноз (работа в процессе)
+// 3. Самое свежее изменение статуса
+// 4. Самое свежее изменение техника
+// 5. last_status_change
+// 6. created_at (крайний случай)
+//
+
+// 👇 Вспомогательная функция: найти САМУЮ СВЕЖУЮ дату в массиве
+function getLatestDate(items) {
+    if (!items || items.length === 0) return null;
+    
+    let latestDate = null;
+    let latestTimestamp = 0;
+    
+    items.forEach(item => {
+        if (item && item.date) {
+            const ts = new Date(item.date).getTime();
+            // Сравниваем timestamp — берём максимум
+            if (!isNaN(ts) && ts > latestTimestamp) {
+                latestTimestamp = ts;
+                latestDate = item.date;
+            }
+        }
+    });
+    
+    return latestDate;
+}
+
+// 👇 Рабочая дата заказа — берём САМУЮ СВЕЖУЮ из всех доступных
+function getOrderWorkDate(order) {
     if (!order) return null;
     
-    if (order.resolutions && order.resolutions.length > 0) {
-        const resolution = order.resolutions[0];
-        if (resolution && resolution.date) {
-            return resolution.date;
-        }
-    }
+    // 1. Резолюция — самая свежая (приоритет: работа выполнена)
+    const latestResolution = getLatestDate(order.resolutions);
+    if (latestResolution) return latestResolution;
     
-    if (order.last_status_change) {
-        return order.last_status_change;
-    }
+    // 2. Диагноз — самый свежий (работа в процессе)
+    const latestDiagnosis = getLatestDate(order.diagnoses);
+    if (latestDiagnosis) return latestDiagnosis;
     
-    if (order.updated_at) {
-        return order.updated_at;
-    }
+    // 3. Изменение статуса — самое свежее
+    const latestStatusChange = getLatestDate(order.status_changes);
+    if (latestStatusChange) return latestStatusChange;
     
-    if (order.created_at) {
-        return order.created_at;
-    }
+    // 4. Изменение техника — самое свежее
+    const latestHandlerChange = getLatestDate(order.handler_changes);
+    if (latestHandlerChange) return latestHandlerChange;
     
-    return null;
+    // 5. last_status_change
+    if (order.last_status_change) return order.last_status_change;
+    
+    // 6. Крайний случай — created_at
+    return order.created_at || null;
+}
+
+// Алиас для совместимости со старым кодом
+function getOrderDateForFilter(order) {
+    return getOrderWorkDate(order);
 }
 
 // ============================================================
-// 3. ФОРМАТИРОВАНИЕ ДАТЫ
+// 3. ВЫХОДНЫЕ
 // ============================================================
+
+async function loadHolidays() {
+    try {
+        const result = await chrome.storage.local.get(['fixmod_holidays']);
+        if (result.fixmod_holidays && Array.isArray(result.fixmod_holidays)) {
+            customHolidays = new Set(result.fixmod_holidays);
+        }
+    } catch (e) {
+        console.warn('⚠️ Не удалось загрузить выходные:', e);
+    }
+}
+
+async function saveHolidays() {
+    try {
+        await chrome.storage.local.set({
+            fixmod_holidays: Array.from(customHolidays)
+        });
+    } catch (e) {
+        console.warn('⚠️ Не удалось сохранить выходные:', e);
+    }
+}
+
+function isDayOff(dateStr) {
+    const date = new Date(dateStr + 'T00:00:00');
+    const dayOfWeek = date.getDay();
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    const isCustom = customHolidays.has(dateStr);
+    return isWeekend || isCustom;
+}
+
+async function toggleHoliday(dateStr) {
+    const date = new Date(dateStr + 'T00:00:00');
+    const dayOfWeek = date.getDay();
+    
+    if (dayOfWeek === 0 || dayOfWeek === 6) return;
+    
+    if (customHolidays.has(dateStr)) {
+        customHolidays.delete(dateStr);
+    } else {
+        customHolidays.add(dateStr);
+    }
+    
+    await saveHolidays();
+    renderCalendar();
+    
+    updateDailyChart();
+    updateStatsCards();
+}
+
+// ============================================================
+// 4. КАЛЕНДАРЬ
+// ============================================================
+
+function renderCalendar() {
+    const grid = document.getElementById('cal-grid');
+    const label = document.getElementById('cal-month-label');
+    if (!grid || !label) return;
+    
+    const year = currentCalMonth.getFullYear();
+    const month = currentCalMonth.getMonth();
+    
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+                        'July', 'August', 'September', 'October', 'November', 'December'];
+    label.textContent = `${monthNames[month]} ${year}`;
+    
+    const firstDay = new Date(year, month, 1);
+    const jsDay = firstDay.getDay();
+    const startOffset = jsDay === 0 ? 6 : jsDay - 1;
+    
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const daysInPrevMonth = new Date(year, month, 0).getDate();
+    
+    let html = '';
+    
+    const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    weekdays.forEach(day => {
+        html += `<div class="calendar-weekday">${day}</div>`;
+    });
+    
+    for (let i = 0; i < startOffset; i++) {
+        const prevDay = daysInPrevMonth - startOffset + i + 1;
+        html += `<div class="calendar-day other-month">${prevDay}</div>`;
+    }
+    
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    
+    for (let day = 1; day <= daysInMonth; day++) {
+        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const date = new Date(dateStr + 'T00:00:00');
+        const dayOfWeek = date.getDay();
+        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+        const isHoliday = customHolidays.has(dateStr);
+        const isToday = dateStr === todayStr;
+        
+        let classes = 'calendar-day';
+        if (isHoliday) classes += ' holiday';
+        else if (isWeekend) classes += ' weekend';
+        if (isToday) classes += ' today';
+        
+        html += `<div class="${classes}" data-date="${dateStr}">${day}</div>`;
+    }
+    
+    const totalCells = startOffset + daysInMonth;
+    const remainingCells = (7 - (totalCells % 7)) % 7;
+    for (let i = 1; i <= remainingCells; i++) {
+        html += `<div class="calendar-day other-month">${i}</div>`;
+    }
+    
+    grid.innerHTML = html;
+    
+    grid.querySelectorAll('.calendar-day:not(.other-month)').forEach(el => {
+        el.addEventListener('click', () => {
+            const dateStr = el.dataset.date;
+            if (dateStr) toggleHoliday(dateStr);
+        });
+    });
+}
+
+function prevCalMonth() {
+    currentCalMonth.setMonth(currentCalMonth.getMonth() - 1);
+    renderCalendar();
+}
+
+function nextCalMonth() {
+    currentCalMonth.setMonth(currentCalMonth.getMonth() + 1);
+    renderCalendar();
+}
+
+async function initCalendar() {
+    await loadHolidays();
+    currentCalMonth = new Date();
+    renderCalendar();
+    
+    const prevBtn = document.getElementById('cal-prev');
+    const nextBtn = document.getElementById('cal-next');
+    if (prevBtn) prevBtn.addEventListener('click', prevCalMonth);
+    if (nextBtn) nextBtn.addEventListener('click', nextCalMonth);
+}
+
+// ============================================================
+// 5. ФОРМАТИРОВАНИЕ ДАТ
+// ============================================================
+
 function formatDate(dateString) {
     if (!dateString) return '-';
     try {
         const date = new Date(dateString);
         return date.toLocaleDateString('en-US', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric'
+            day: '2-digit', month: '2-digit', year: 'numeric'
         });
     } catch (e) {
         return dateString;
@@ -155,11 +377,8 @@ function formatDateTime(dateString) {
     try {
         const date = new Date(dateString);
         return date.toLocaleString('en-US', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
+            day: '2-digit', month: '2-digit', year: 'numeric',
+            hour: '2-digit', minute: '2-digit'
         });
     } catch (e) {
         return dateString;
@@ -167,11 +386,11 @@ function formatDateTime(dateString) {
 }
 
 // ============================================================
-// 4. ПРЕСЕТЫ ДАТ (С ЛОКАЛЬНЫМ ВРЕМЕНЕМ)
+// 6. ПРЕСЕТЫ ДАТ
 // ============================================================
+
 function getPresetDates(preset) {
     const today = new Date();
-    
     const year = today.getFullYear();
     const month = String(today.getMonth() + 1).padStart(2, '0');
     const day = String(today.getDate()).padStart(2, '0');
@@ -179,64 +398,33 @@ function getPresetDates(preset) {
     
     const yesterday = new Date(today);
     yesterday.setDate(today.getDate() - 1);
-    const yYear = yesterday.getFullYear();
-    const yMonth = String(yesterday.getMonth() + 1).padStart(2, '0');
-    const yDay = String(yesterday.getDate()).padStart(2, '0');
-    const yesterdayStr = `${yYear}-${yMonth}-${yDay}`;
+    const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
     
     const sevenDaysAgo = new Date(today);
     sevenDaysAgo.setDate(today.getDate() - 6);
-    const sYear = sevenDaysAgo.getFullYear();
-    const sMonth = String(sevenDaysAgo.getMonth() + 1).padStart(2, '0');
-    const sDay = String(sevenDaysAgo.getDate()).padStart(2, '0');
-    const sevenDaysStr = `${sYear}-${sMonth}-${sDay}`;
+    const sevenDaysStr = `${sevenDaysAgo.getFullYear()}-${String(sevenDaysAgo.getMonth() + 1).padStart(2, '0')}-${String(sevenDaysAgo.getDate()).padStart(2, '0')}`;
     
     const thirtyDaysAgo = new Date(today);
     thirtyDaysAgo.setDate(today.getDate() - 29);
-    const tYear = thirtyDaysAgo.getFullYear();
-    const tMonth = String(thirtyDaysAgo.getMonth() + 1).padStart(2, '0');
-    const tDay = String(thirtyDaysAgo.getDate()).padStart(2, '0');
-    const thirtyDaysStr = `${tYear}-${tMonth}-${tDay}`;
+    const thirtyDaysStr = `${thirtyDaysAgo.getFullYear()}-${String(thirtyDaysAgo.getMonth() + 1).padStart(2, '0')}-${String(thirtyDaysAgo.getDate()).padStart(2, '0')}`;
     
     switch(preset) {
-        case 'today':
-            return {
-                from: todayStr,
-                to: todayStr
-            };
-        case 'yesterday':
-            return {
-                from: yesterdayStr,
-                to: yesterdayStr
-            };
-        case '7d':
-            return {
-                from: sevenDaysStr,
-                to: todayStr
-            };
-        case '30d':
-            return {
-                from: thirtyDaysStr,
-                to: todayStr
-            };
+        case 'today': return { from: todayStr, to: todayStr };
+        case 'yesterday': return { from: yesterdayStr, to: yesterdayStr };
+        case '7d': return { from: sevenDaysStr, to: todayStr };
+        case '30d': return { from: thirtyDaysStr, to: todayStr };
         case 'all':
-        default:
-            return {
-                from: '2000-01-01',
-                to: todayStr
-            };
+        default: return { from: '2000-01-01', to: todayStr };
     }
 }
 
 // ============================================================
-// 5. ФИЛЬТРАЦИЯ ПО ДАТЕ
+// 7. ФИЛЬТРАЦИЯ ПО ДАТЕ
 // ============================================================
+
 function applyDateFilter(orders) {
     if (!orders) return [];
-    
-    if (!currentDateFrom && !currentDateTo && !currentDays) {
-        return orders;
-    }
+    if (!currentDateFrom && !currentDateTo && !currentDays) return orders;
 
     let filtered = [...orders];
 
@@ -247,34 +435,29 @@ function applyDateFilter(orders) {
         threshold.setHours(0, 0, 0, 0);
         
         filtered = filtered.filter(order => {
-            const orderDate = getOrderDateForFilter(order);
+            const orderDate = getOrderWorkDate(order);
             if (!orderDate) return false;
-            const changeDate = new Date(orderDate);
-            return changeDate >= threshold;
+            return new Date(orderDate) >= threshold;
         });
     }
 
     if (currentDateFrom) {
         const from = new Date(currentDateFrom);
         from.setHours(0, 0, 0, 0);
-        
         filtered = filtered.filter(order => {
-            const orderDate = getOrderDateForFilter(order);
+            const orderDate = getOrderWorkDate(order);
             if (!orderDate) return false;
-            const changeDate = new Date(orderDate);
-            return changeDate >= from;
+            return new Date(orderDate) >= from;
         });
     }
 
     if (currentDateTo) {
         const to = new Date(currentDateTo);
         to.setHours(23, 59, 59, 999);
-        
         filtered = filtered.filter(order => {
-            const orderDate = getOrderDateForFilter(order);
+            const orderDate = getOrderWorkDate(order);
             if (!orderDate) return false;
-            const changeDate = new Date(orderDate);
-            return changeDate <= to;
+            return new Date(orderDate) <= to;
         });
     }
 
@@ -282,14 +465,14 @@ function applyDateFilter(orders) {
 }
 
 // ============================================================
-// 6. ОСНОВНАЯ ФУНКЦИЯ ФИЛЬТРАЦИИ
+// 8. ОСНОВНАЯ ФИЛЬТРАЦИЯ
 // ============================================================
+
 function filterOrders() {
     const search = document.getElementById('search-input')?.value.toLowerCase().trim() || '';
     const statusFilter = document.getElementById('status-filter')?.value || '';
     
     let filtered = [...allOrders];
-    
     filtered = applyDateFilter(filtered);
     
     const activeGroup = currentGroup || statusFilter;
@@ -324,43 +507,32 @@ function filterOrders() {
 }
 
 // ============================================================
-// 7. КАРТОЧКИ СТАТИСТИКИ (All Orders - всегда все заказы, остальные - по дата-фильтру)
+// 9. КАРТОЧКИ СТАТИСТИКИ
 // ============================================================
+
 function updateStatsCards() {
-    // 1. All Orders - всегда показывает ВСЕ заказы (allOrders)
-    const allStatsSource = allOrders;
-    const allStatsSourceLength = allStatsSource.length;
-    
-    // 2. Остальные карточки - по дата-фильтру
+    const allStatsSourceLength = allOrders.length;
     const dateFiltered = applyDateFilter(allOrders);
-    const statsSource = dateFiltered;
     const groupedStats = {};
 
-    statsSource.forEach(order => {
+    dateFiltered.forEach(order => {
         const group = getStatusGroup(order.status_code, order.status);
         if (!groupedStats[group]) {
-            groupedStats[group] = {
-                code: group,
-                label: STATUS_MAP[group] || group,
-                count: 0
-            };
+            groupedStats[group] = { code: group, label: STATUS_MAP[group] || group, count: 0 };
         }
         groupedStats[group].count++;
     });
 
     let html = '';
-
-    // All Orders - всегда показывает общее количество
     const isAllActive = currentGroup === '';
     html += `
         <div class="stat-card main-card ${isAllActive ? 'active' : ''}" data-group="" style="cursor:pointer;">
             <div class="number">${allStatsSourceLength || 0}</div>
             <div class="label">All Orders</div>
-            <div class="sub-label">Total</div>
+            <div class="sub-label">My orders</div>
         </div>
     `;
 
-    // Остальные карточки - по дата-фильтру
     const orderList = ['ready', 'cancelled', 'handling', 'parts', 'customer', 'repair', 'unknown'];
 
     orderList.forEach(group => {
@@ -370,7 +542,6 @@ function updateStatsCards() {
         const color = STATUS_COLORS[group] || '#8e8e93';
         const members = getGroupMembers(group);
         const isActive = currentGroup === group;
-
         const membersText = members.join(', ');
 
         html += `
@@ -393,8 +564,9 @@ function updateStatsCards() {
 }
 
 // ============================================================
-// 8. СТАТУС ЛИСТ (ПО ДАТА-ФИЛЬТРУ)
+// 10. СПИСОК СТАТУСОВ
 // ============================================================
+
 function updateStatusList() {
     const colors = STATUS_COLORS;
     const labels = STATUS_MAP;
@@ -446,22 +618,23 @@ function updateStatusList() {
         });
     });
     
-    const footer = document.querySelector('.stats-list-footer') || document.createElement('div');
+    const listContainer = document.getElementById('statsListContainer');
+    const oldFooter = listContainer.parentElement.querySelector('.stats-list-footer');
+    if (oldFooter) oldFooter.remove();
+    
+    const footer = document.createElement('div');
     footer.className = 'stats-list-footer';
     footer.innerHTML = `
         <span class="total-label">Total orders</span>
         <span class="total-number">${total}</span>
     `;
-    
-    const listContainer = document.getElementById('statsListContainer');
-    const oldFooter = listContainer.parentElement.querySelector('.stats-list-footer');
-    if (oldFooter) oldFooter.remove();
     listContainer.parentElement.appendChild(footer);
 }
 
 // ============================================================
-// 9. КРУГОВАЯ ДИАГРАММА (ПО ДАТА-ФИЛЬТРУ)
+// 11. КРУГОВАЯ ДИАГРАММА
 // ============================================================
+
 function updateStatusChart() {
     if (!chartJsAvailable) {
         document.getElementById('statusChart').style.display = 'none';
@@ -498,16 +671,12 @@ function updateStatusChart() {
     }
     
     const ctx = document.getElementById('statusChart').getContext('2d');
-    
-    if (statusChart) {
-        statusChart.destroy();
-    }
+    if (statusChart) statusChart.destroy();
     
     const totalAll = dateFiltered.length || 0;
     document.getElementById('chartTotal').textContent = totalAll;
     
     const isDark = document.body.classList.contains('dark');
-    const textColor = isDark ? '#e5e7eb' : '#1a1a2e';
     
     statusChart = new Chart(ctx, {
         type: 'doughnut',
@@ -537,10 +706,7 @@ function updateStatusChart() {
                     }
                 }
             },
-            animation: {
-                animateRotate: true,
-                duration: 800
-            }
+            animation: { animateRotate: true, duration: 800 }
         }
     });
     
@@ -560,8 +726,9 @@ function updateStatusChart() {
 }
 
 // ============================================================
-// 10. ГРАФИК AVERAGE REPAIRS BY DAY (ПО ДАТА-ФИЛЬТРУ)
+// 12. AVERAGE REPAIRS BY DAY
 // ============================================================
+
 function updateDailyChart() {
     if (!chartJsAvailable) {
         document.getElementById('dailyChart').style.display = 'none';
@@ -571,10 +738,12 @@ function updateDailyChart() {
     
     const dateFiltered = applyDateFilter(allOrders);
     const dailyData = {};
+    
     dateFiltered.forEach(order => {
-        const date = getOrderDateForFilter(order);
+        const date = getOrderWorkDate(order);
         if (date) {
-            const day = date.slice(0,10);
+            const day = date.slice(0, 10);
+            
             if (!dailyData[day]) {
                 dailyData[day] = { total: 0, ready: 0, no_repair: 0 };
             }
@@ -589,7 +758,94 @@ function updateDailyChart() {
         }
     });
     
-    const sortedDays = Object.keys(dailyData).sort();
+    const sortedDays = Object.keys(dailyData)
+        .filter(day => !isDayOff(day))
+        .sort();
+    
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    
+    // AVERAGE за месяц
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    
+    let workingDaysMonth = 0;
+    const tempDate = new Date(monthStart);
+    while (tempDate <= todayEnd) {
+        const dayStr = `${tempDate.getFullYear()}-${String(tempDate.getMonth() + 1).padStart(2, '0')}-${String(tempDate.getDate()).padStart(2, '0')}`;
+        if (!isDayOff(dayStr)) {
+            workingDaysMonth++;
+        }
+        tempDate.setDate(tempDate.getDate() + 1);
+    }
+    
+    let totalOrdersMonth = 0;
+    dateFiltered.forEach(order => {
+        const date = getOrderWorkDate(order);
+        if (date) {
+            const orderDate = new Date(date);
+            if (orderDate >= monthStart && orderDate <= now) {
+                totalOrdersMonth++;
+            }
+        }
+    });
+    
+    if (workingDaysMonth === 0) workingDaysMonth = 1;
+    const avgMonth = totalOrdersMonth / workingDaysMonth;
+    
+    // AVERAGE за неделю
+    const weekAgo = new Date(now);
+    weekAgo.setDate(weekAgo.getDate() - 6);
+    weekAgo.setHours(0, 0, 0, 0);
+    
+    let workingDaysWeek = 0;
+    const weekDate = new Date(weekAgo);
+    while (weekDate <= todayEnd) {
+        const dayStr = `${weekDate.getFullYear()}-${String(weekDate.getMonth() + 1).padStart(2, '0')}-${String(weekDate.getDate()).padStart(2, '0')}`;
+        if (!isDayOff(dayStr)) {
+            workingDaysWeek++;
+        }
+        weekDate.setDate(weekDate.getDate() + 1);
+    }
+    
+    let totalOrdersWeek = 0;
+    dateFiltered.forEach(order => {
+        const date = getOrderWorkDate(order);
+        if (date) {
+            const orderDate = new Date(date);
+            if (orderDate >= weekAgo && orderDate <= now) {
+                totalOrdersWeek++;
+            }
+        }
+    });
+    
+    if (workingDaysWeek === 0) workingDaysWeek = 1;
+    const avgWeek = totalOrdersWeek / workingDaysWeek;
+    
+    // TODAY
+    let totalToday = 0;
+    dateFiltered.forEach(order => {
+        const date = getOrderWorkDate(order);
+        if (date && date.slice(0, 10) === todayStr) {
+            totalToday++;
+        }
+    });
+    
+    const avgMonthEl = document.getElementById('avg-month');
+    const avgWeekEl = document.getElementById('avg-week');
+    const avgTodayEl = document.getElementById('avg-today');
+    
+    if (avgMonthEl) avgMonthEl.textContent = avgMonth.toFixed(1);
+    if (avgWeekEl) avgWeekEl.textContent = avgWeek.toFixed(1);
+    if (avgTodayEl) avgTodayEl.textContent = totalToday;
+    
+    console.log('📊 Статистика для', currentUser || 'всех:', {
+        'Моих заказов в месяце': totalOrdersMonth,
+        'Рабочих дней в месяце': workingDaysMonth,
+        'Avg / месяц': avgMonth.toFixed(1),
+        'Avg / неделя': avgWeek.toFixed(1),
+        'Сегодня': totalToday
+    });
     
     if (sortedDays.length === 0) {
         const ctx = document.getElementById('dailyChart').getContext('2d');
@@ -607,7 +863,6 @@ function updateDailyChart() {
                     data: [0],
                     borderColor: '#8e8e93',
                     backgroundColor: 'transparent',
-                    pointBackgroundColor: '#8e8e93',
                     tension: 0.3
                 }]
             },
@@ -633,18 +888,8 @@ function updateDailyChart() {
     const readyData = sortedDays.map(d => dailyData[d].ready);
     const noRepairData = sortedDays.map(d => dailyData[d].no_repair);
     
-    const totalSum = totalData.reduce((a, b) => a + b, 0);
-    const avgValue = totalData.length > 0 ? (totalSum / totalData.length) : 0;
-    const avgDisplay = avgValue.toFixed(1);
-    
-    const avgEl = document.getElementById('dailyAvg');
-    if (avgEl) avgEl.textContent = avgDisplay;
-    
     const ctx = document.getElementById('dailyChart').getContext('2d');
-    
-    if (dailyChart) {
-        dailyChart.destroy();
-    }
+    if (dailyChart) dailyChart.destroy();
     
     const isDark = document.body.classList.contains('dark');
     const textColor = isDark ? '#e5e7eb' : '#1a1a2e';
@@ -653,64 +898,151 @@ function updateDailyChart() {
     const maxValue = Math.max(...totalData, 1);
     const stepSize = maxValue <= 10 ? 1 : maxValue <= 20 ? 2 : maxValue <= 50 ? 5 : 10;
     
+    let chartType = 'line';
+    let datasets = [];
+    
+    if (dailyChartType === 'bar') {
+        chartType = 'bar';
+        datasets = [
+            {
+                label: 'Total',
+                data: totalData,
+                backgroundColor: 'rgba(0, 122, 255, 0.7)',
+                borderColor: '#007aff',
+                borderWidth: 1,
+                borderRadius: 4,
+                order: 1
+            },
+            {
+                label: 'Ready for pickup',
+                data: readyData,
+                backgroundColor: 'rgba(52, 199, 89, 0.7)',
+                borderColor: '#34c759',
+                borderWidth: 1,
+                borderRadius: 4,
+                order: 2
+            },
+            {
+                label: 'No Repair',
+                data: noRepairData,
+                backgroundColor: 'rgba(255, 59, 48, 0.7)',
+                borderColor: '#ff3b30',
+                borderWidth: 1,
+                borderRadius: 4,
+                order: 3
+            }
+        ];
+    } else if (dailyChartType === 'mixed') {
+        chartType = 'line';
+        datasets = [
+            {
+                label: 'Total',
+                data: totalData,
+                borderColor: '#007aff',
+                backgroundColor: 'rgba(0, 122, 255, 0.1)',
+                pointBackgroundColor: '#ffffff',
+                pointBorderColor: '#007aff',
+                pointBorderWidth: 3,
+                pointRadius: 6,
+                pointHoverRadius: 9,
+                tension: 0.35,
+                fill: true,
+                borderWidth: 3,
+                order: 1
+            },
+            {
+                label: 'Ready for pickup',
+                data: readyData,
+                borderColor: '#34c759',
+                backgroundColor: 'transparent',
+                pointBackgroundColor: '#ffffff',
+                pointBorderColor: '#34c759',
+                pointBorderWidth: 3,
+                pointRadius: 5,
+                pointHoverRadius: 8,
+                tension: 0.35,
+                fill: false,
+                borderWidth: 2.5,
+                borderDash: [8, 5],
+                order: 2
+            },
+            {
+                label: 'No Repair',
+                data: noRepairData,
+                borderColor: '#ff3b30',
+                backgroundColor: 'transparent',
+                pointBackgroundColor: '#ffffff',
+                pointBorderColor: '#ff3b30',
+                pointBorderWidth: 3,
+                pointRadius: 5,
+                pointHoverRadius: 8,
+                tension: 0.35,
+                fill: false,
+                borderWidth: 2.5,
+                borderDash: [5, 5],
+                order: 3
+            }
+        ];
+    } else {
+        chartType = 'line';
+        datasets = [
+            {
+                label: 'Total',
+                data: totalData,
+                borderColor: '#007aff',
+                backgroundColor: 'rgba(0, 122, 255, 0.1)',
+                pointBackgroundColor: '#007aff',
+                pointBorderColor: '#007aff',
+                pointRadius: 3,
+                pointHoverRadius: 6,
+                tension: 0.3,
+                fill: true,
+                borderWidth: 2.5,
+                order: 1
+            },
+            {
+                label: 'Ready for pickup',
+                data: readyData,
+                borderColor: '#34c759',
+                backgroundColor: 'transparent',
+                pointBackgroundColor: '#34c759',
+                pointBorderColor: '#34c759',
+                pointRadius: 3,
+                pointHoverRadius: 6,
+                tension: 0.3,
+                fill: false,
+                borderWidth: 2,
+                borderDash: [6, 4],
+                order: 2
+            },
+            {
+                label: 'No Repair',
+                data: noRepairData,
+                borderColor: '#ff3b30',
+                backgroundColor: 'transparent',
+                pointBackgroundColor: '#ff3b30',
+                pointBorderColor: '#ff3b30',
+                pointRadius: 3,
+                pointHoverRadius: 6,
+                tension: 0.3,
+                fill: false,
+                borderWidth: 2,
+                borderDash: [4, 4],
+                order: 3
+            }
+        ];
+    }
+    
     dailyChart = new Chart(ctx, {
-        type: 'line',
+        type: chartType,
         data: {
             labels: labels,
-            datasets: [
-                {
-                    label: 'Total',
-                    data: totalData,
-                    borderColor: '#007aff',
-                    backgroundColor: 'rgba(0, 122, 255, 0.1)',
-                    pointBackgroundColor: '#007aff',
-                    pointBorderColor: '#007aff',
-                    pointRadius: 3,
-                    pointHoverRadius: 6,
-                    tension: 0.3,
-                    fill: true,
-                    borderWidth: 2.5,
-                    order: 1
-                },
-                {
-                    label: 'Ready for pickup',
-                    data: readyData,
-                    borderColor: '#34c759',
-                    backgroundColor: 'transparent',
-                    pointBackgroundColor: '#34c759',
-                    pointBorderColor: '#34c759',
-                    pointRadius: 3,
-                    pointHoverRadius: 6,
-                    tension: 0.3,
-                    fill: false,
-                    borderWidth: 2,
-                    borderDash: [6, 4],
-                    order: 2
-                },
-                {
-                    label: 'No Repair',
-                    data: noRepairData,
-                    borderColor: '#ff3b30',
-                    backgroundColor: 'transparent',
-                    pointBackgroundColor: '#ff3b30',
-                    pointBorderColor: '#ff3b30',
-                    pointRadius: 3,
-                    pointHoverRadius: 6,
-                    tension: 0.3,
-                    fill: false,
-                    borderWidth: 2,
-                    borderDash: [4, 4],
-                    order: 3
-                }
-            ]
+            datasets: datasets
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            interaction: {
-                mode: 'index',
-                intersect: false
-            },
+            interaction: { mode: 'index', intersect: false },
             plugins: {
                 legend: {
                     display: true,
@@ -734,7 +1066,8 @@ function updateDailyChart() {
                                 return date.toLocaleDateString('en-US', {
                                     day: '2-digit',
                                     month: '2-digit',
-                                    year: 'numeric'
+                                    year: 'numeric',
+                                    weekday: 'long'
                                 });
                             }
                             return '';
@@ -744,7 +1077,7 @@ function updateDailyChart() {
                             const day = sortedDays[index];
                             if (day && dailyData[day]) {
                                 const d = dailyData[day];
-                                return 'Total: ' + d.total + ' orders | Ready: ' + d.ready + ' | No Repair: ' + d.no_repair;
+                                return 'Total: ' + d.total + ' | Ready: ' + d.ready + ' | No Repair: ' + d.no_repair;
                             }
                             return '';
                         }
@@ -754,11 +1087,7 @@ function updateDailyChart() {
             scales: {
                 x: {
                     grid: { display: false },
-                    ticks: {
-                        color: textColor,
-                        font: { size: 9 },
-                        maxTicksLimit: 20
-                    }
+                    ticks: { color: textColor, font: { size: 9 }, maxTicksLimit: 20 }
                 },
                 y: {
                     grid: { color: gridColor },
@@ -766,25 +1095,30 @@ function updateDailyChart() {
                         color: textColor,
                         font: { size: 9 },
                         stepSize: stepSize,
-                        callback: function(value) {
-                            return Math.round(value);
-                        }
+                        callback: function(value) { return Math.round(value); }
                     },
                     beginAtZero: true
                 }
             },
-            elements: {
-                line: {
-                    tension: 0.3
-                }
-            }
+            elements: { line: { tension: 0.3 } }
         }
     });
 }
 
+function setDailyChartType(type) {
+    dailyChartType = type;
+    
+    document.querySelectorAll('[data-chart-type]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.chartType === type);
+    });
+    
+    updateDailyChart();
+}
+
 // ============================================================
-// 11. ТАБЛИЦА С ПАГИНАЦИЕЙ
+// 13. ТАБЛИЦА
 // ============================================================
+
 function renderTable() {
     const tbody = document.getElementById('orders-table');
     
@@ -822,6 +1156,7 @@ function renderTable() {
         const group = getStatusGroup(order.status_code, order.status);
         const label = statusLabels[group] || order.status || 'Unknown';
         const color = STATUS_COLORS[group] || '#8e8e93';
+        const workDate = getOrderWorkDate(order);
         
         return `
             <tr>
@@ -839,7 +1174,7 @@ function renderTable() {
                 <td style="max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${order.resolution || ''}">
                     ${order.resolution || '—'}
                 </td>
-                <td style="font-size:12px;">${formatDateTime(order.created_at)}</td>
+                <td style="font-size:12px;">${formatDateTime(workDate)}</td>
             </tr>
         `;
     }).join('');
@@ -880,30 +1215,25 @@ function changeLimit() {
 }
 
 // ============================================================
-// 12. ФИЛЬТР ПО ГРУППЕ (ОБНОВЛЕННЫЙ)
+// 14. ФИЛЬТР ПО ГРУППЕ
 // ============================================================
+
 function filterByGroup(group) {
     const statusFilter = document.getElementById('status-filter');
     
     if (group === '') {
-        // All Orders - сбрасываем ВСЕ фильтры: и статус, и дату
         statusFilter.value = '';
         currentGroup = '';
-        
-        // Сбрасываем дата-фильтр
         currentDateFrom = '';
         currentDateTo = '';
         currentDays = '';
         document.getElementById('date-from').value = '';
         document.getElementById('date-to').value = '';
         document.querySelectorAll('[data-preset]').forEach(b => b.classList.remove('active'));
-        
     } else if (statusFilter.value === group || currentGroup === group) {
-        // Если уже выбран этот статус — снимаем фильтр (но дату НЕ сбрасываем)
         statusFilter.value = '';
         currentGroup = '';
     } else {
-        // Выбираем группу (дату НЕ сбрасываем)
         statusFilter.value = group;
         currentGroup = group;
     }
@@ -912,18 +1242,28 @@ function filterByGroup(group) {
 }
 
 // ============================================================
-// 13. ЗАГРУЗКА ДАННЫХ
+// 15. ЗАГРУЗКА
 // ============================================================
+
 async function loadOrders() {
     return new Promise((resolve) => {
         chrome.runtime.sendMessage({ type: 'GET_ALL_ORDERS' }, (response) => {
             if (response && response.success) {
-                allOrders = response.data || [];
+                rawAllOrders = response.data || [];
+                
+                const userFiltered = applyUserFilter(rawAllOrders);
+                
+                allOrders = userFiltered;
                 allOrders.sort((a, b) => {
-                    return new Date(b.created_at) - new Date(a.created_at);
+                    const dateA = getOrderWorkDate(a);
+                    const dateB = getOrderWorkDate(b);
+                    return new Date(dateB) - new Date(dateA);
                 });
+                
                 filteredOrders = [...allOrders];
                 visibleOrders = [...allOrders];
+                
+                console.log(`👤 Загружено заказов: всего ${rawAllOrders.length}, моих ${allOrders.length}`);
                 
                 updateStatsCards();
                 updateStatusList();
@@ -938,9 +1278,6 @@ async function loadOrders() {
     });
 }
 
-// ============================================================
-// 14. ОБНОВЛЕНИЕ
-// ============================================================
 async function refreshStats() {
     await loadOrders();
 }
@@ -962,8 +1299,9 @@ function resetFilters() {
 }
 
 // ============================================================
-// 15. ТЕМНАЯ ТЕМА
+// 16. ТЕМНАЯ ТЕМА
 // ============================================================
+
 async function loadDarkMode() {
     try {
         const result = await chrome.storage.local.get(['darkMode']);
@@ -984,7 +1322,6 @@ function updateChartsTheme(isDark) {
         dailyChart.options.scales.y.ticks.color = textColor;
         dailyChart.options.scales.x.ticks.color = textColor;
         dailyChart.options.scales.y.grid.color = gridColor;
-        dailyChart.options.scales.x.grid.color = gridColor;
         dailyChart.options.plugins.legend.labels.color = textColor;
         dailyChart.update();
     }
@@ -996,10 +1333,13 @@ function updateChartsTheme(isDark) {
 }
 
 // ============================================================
-// 16. ИНИЦИАЛИЗАЦИЯ
+// 17. ИНИЦИАЛИЗАЦИЯ
 // ============================================================
+
 document.addEventListener('DOMContentLoaded', async () => {
+    await loadCurrentUserFromStorage();
     await loadDarkMode();
+    await initCalendar();
     await refreshStats();
     
     const today = new Date().toISOString().slice(0,10);
@@ -1016,6 +1356,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('prev-page').addEventListener('click', prevPage);
     document.getElementById('next-page').addEventListener('click', nextPage);
     document.getElementById('page-size').addEventListener('change', changeLimit);
+    
+    document.querySelectorAll('[data-chart-type]').forEach(btn => {
+        btn.addEventListener('click', function() {
+            setDailyChartType(this.dataset.chartType);
+        });
+    });
     
     document.querySelectorAll('[data-preset]').forEach(btn => {
         btn.addEventListener('click', function() {
@@ -1054,6 +1400,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         filterOrders();
     });
     
+    chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === 'local' && changes.fixmod_current_user) {
+            const newUser = changes.fixmod_current_user.newValue;
+            if (newUser && newUser !== currentUser) {
+                console.log('👤 Пользователь изменился:', currentUser, '→', newUser);
+                currentUser = newUser;
+                filterByUser = true;
+                refreshStats();
+            }
+        }
+    });
+    
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (request.type === 'UPDATE_DARK_MODE') {
             document.body.classList.toggle('dark', request.enabled);
@@ -1065,6 +1423,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 // ============================================================
-// 17. АВТООБНОВЛЕНИЕ
+// 18. АВТООБНОВЛЕНИЕ
 // ============================================================
+
 setInterval(refreshStats, 60000);

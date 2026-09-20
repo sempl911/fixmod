@@ -46,7 +46,7 @@
                                 if (imageUrl && !photoUrls.includes(imageUrl)) {
                                     photoCount++;
                                     photoUrls.push(imageUrl);
-                                    console.log('Found photo:', imageUrl);
+                                    // console.log('Found photo:', imageUrl);
                                 }
                             }
                         }

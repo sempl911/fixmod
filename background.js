@@ -1,4 +1,4 @@
-// background.js - FixMod Service Worker с двойным бэкапом и глобальной темой
+// background.js - FixMod Service Worker
 
 console.log('🔧 FixMod Background Service Started');
 
@@ -26,6 +26,7 @@ function openDatabase() {
                 store.createIndex('order_number', 'order_number', { unique: false });
                 store.createIndex('status_code', 'status_code', { unique: false });
                 store.createIndex('created_at', 'created_at', { unique: false });
+                store.createIndex('current_user', 'current_user', { unique: false });
             }
             
             if (!database.objectStoreNames.contains('history')) {
@@ -69,14 +70,67 @@ async function saveOrderToDB(orderData) {
             let hasChanges = false;
             
             if (existing) {
+                // === СУЩЕСТВУЮЩИЙ ЗАКАЗ ===
+                
                 if (existing.status !== orderData.status) hasChanges = true;
                 if (existing.technician !== orderData.technician) hasChanges = true;
                 if (existing.resolution !== orderData.resolution) hasChanges = true;
                 
+                // Проверка current_user
+                if (existing.current_user !== orderData.current_user && orderData.current_user) {
+                    console.log('👤 Обновляем current_user:', existing.current_user, '→', orderData.current_user);
+                    hasChanges = true;
+                }
+                
+                if (!existing.current_user && orderData.current_user && 
+                    existing.technician === orderData.current_user) {
+                    console.log('👤 Миграция: подставляем current_user');
+                    hasChanges = true;
+                }
+                
+                if (!existing.device_model && orderData.device_model) {
+                    console.log('📱 Обновляем device_model');
+                    hasChanges = true;
+                }
+                if (!existing.imei && orderData.imei) {
+                    console.log('🔢 Обновляем imei');
+                    hasChanges = true;
+                }
+                if (!existing.customer_email && orderData.customer_email) {
+                    console.log('📧 Обновляем email');
+                    hasChanges = true;
+                }
+                
+                if (existing.device_model !== orderData.device_model && orderData.device_model) {
+                    hasChanges = true;
+                }
+                if (existing.imei !== orderData.imei && orderData.imei) {
+                    hasChanges = true;
+                }
+                
+                // Проверка диагнозов
+                const existingDiagCount = (existing.diagnoses || []).length;
+                const newDiagCount = (orderData.diagnoses || []).length;
+                if (newDiagCount > existingDiagCount) {
+                    console.log('🔬 Обновляем diagnoses:', existingDiagCount, '→', newDiagCount);
+                    hasChanges = true;
+                }
+                
+                // Проверка резолюций
+                const existingResCount = (existing.resolutions || []).length;
+                const newResCount = (orderData.resolutions || []).length;
+                if (newResCount > existingResCount) {
+                    console.log('✅ Обновляем resolutions:', existingResCount, '→', newResCount);
+                    hasChanges = true;
+                }
+                
                 if (!hasChanges) {
+                    console.log('ℹ️ Нет изменений для заказа:', orderData.order_number);
                     resolve(id);
                     return;
                 }
+                
+                console.log('🔄 Обновляем заказ:', orderData.order_number);
                 
                 const updatedOrder = {
                     ...existing,
@@ -96,6 +150,9 @@ async function saveOrderToDB(orderData) {
                     });
                 }
             } else {
+                // === НОВЫЙ ЗАКАЗ ===
+                console.log('🆕 Создаём заказ:', orderData.order_number, '| user:', orderData.current_user);
+                
                 const newOrder = {
                     id: id,
                     ...orderData,
@@ -130,6 +187,66 @@ async function saveOrderToDB(orderData) {
     });
 }
 
+// ============================================================
+// === ОПРЕДЕЛЕНИЕ РАБОЧЕЙ ДАТЫ ЗАКАЗА ===
+// ============================================================
+//
+// Приоритет:
+// 1. Самая свежая резолюция (работа выполнена) 
+// 2. Самый свежий диагноз (работа в процессе)
+// 3. Самое свежее изменение статуса
+// 4. last_status_change
+// 5. created_at (крайний случай)
+//
+// ВАЖНО: берём САМУЮ СВЕЖУЮ дату, а не последний элемент в массиве
+// (Fixably отдаёт данные в порядке "от свежего к старому",
+//  но мы не зависим от порядка — сравниваем timestamps)
+//
+function getLatestDate(items) {
+    if (!items || items.length === 0) return null;
+    
+    let latestDate = null;
+    let latestTimestamp = 0;
+    
+    items.forEach(item => {
+        if (item && item.date) {
+            const ts = new Date(item.date).getTime();
+            if (!isNaN(ts) && ts > latestTimestamp) {
+                latestTimestamp = ts;
+                latestDate = item.date;
+            }
+        }
+    });
+    
+    return latestDate;
+}
+
+function getOrderWorkDate(order) {
+    if (!order) return null;
+    
+    // 1. Резолюция — самая свежая (приоритет: работа выполнена)
+    const latestResolution = getLatestDate(order.resolutions);
+    if (latestResolution) return latestResolution;
+    
+    // 2. Диагноз — самый свежий (работа в процессе)
+    const latestDiagnosis = getLatestDate(order.diagnoses);
+    if (latestDiagnosis) return latestDiagnosis;
+    
+    // 3. Изменение статуса — самое свежее
+    const latestStatusChange = getLatestDate(order.status_changes);
+    if (latestStatusChange) return latestStatusChange;
+    
+    // 4. Изменение техника — самое свежее
+    const latestHandlerChange = getLatestDate(order.handler_changes);
+    if (latestHandlerChange) return latestHandlerChange;
+    
+    // 5. last_status_change
+    if (order.last_status_change) return order.last_status_change;
+    
+    // 6. Крайний случай — created_at
+    return order.created_at || null;
+}
+
 async function updateStatistics() {
     const database = await getDB();
     
@@ -156,11 +273,13 @@ async function updateStatistics() {
                 const status = order.status_code || 'unknown';
                 statusCounts[status] = (statusCounts[status] || 0) + 1;
                 
-                if (order.created_at) {
-                    const month = order.created_at.substring(0, 7);
+                // 👇 Используем РАБОЧУЮ ДАТУ (самую свежую из diagnoses/resolutions)
+                const workDate = getOrderWorkDate(order);
+                if (workDate) {
+                    const month = workDate.substring(0, 7);
                     monthlyStats[month] = (monthlyStats[month] || 0) + 1;
                     
-                    const day = order.created_at.substring(0, 10);
+                    const day = workDate.substring(0, 10);
                     dailyStats[day] = (dailyStats[day] || 0) + 1;
                     
                     if (day === today) {
@@ -235,8 +354,10 @@ async function getTodaysOrders() {
     const allOrders = await getAllOrders();
     const today = new Date().toISOString().slice(0, 10);
     
+    // Используем рабочую дату
     return allOrders.filter(order => {
-        return order.created_at && order.created_at.startsWith(today);
+        const workDate = getOrderWorkDate(order);
+        return workDate && workDate.slice(0, 10) === today;
     });
 }
 
@@ -405,42 +526,81 @@ async function restoreFromBackup() {
                 await importDataInternal(storageBackup);
                 console.log('✅ Restored from chrome.storage.local');
                 return true;
+            } else {
+                console.log('ℹ️ DB not empty, skipping storage restore');
             }
+        } else {
+            console.log('ℹ️ No backup in chrome.storage.local');
         }
         
-        console.log('🔍 No storage backup or DB not empty, trying folder...');
+        console.log('🔍 Trying folder backup...');
         
         const downloads = await new Promise((resolve) => {
             chrome.downloads.search({
-                filenameRegex: 'FixModDB/latest.json',
+                filenameRegex: 'FixModDB/latest\\.json$',
                 state: 'complete',
                 limit: 1
             }, resolve);
         });
         
-        if (downloads.length === 0) {
-            console.log('ℹ️ No backup found in FixModDB folder');
+        if (!downloads || downloads.length === 0) {
+            console.log('ℹ️ No backup file found in FixModDB folder');
             return false;
         }
         
         const file = downloads[0];
-        const response = await fetch(file.url);
-        const folderBackup = await response.json();
+        console.log('📁 Found backup file:', file.filename);
         
-        if (!folderBackup.orders || folderBackup.orders.length === 0) {
+        let response;
+        try {
+            response = await fetch(file.url);
+        } catch (fetchError) {
+            console.warn('⚠️ Could not fetch backup file:', fetchError.message);
+            return false;
+        }
+        
+        if (!response.ok) {
+            console.warn('⚠️ Backup file not accessible, status:', response.status);
+            return false;
+        }
+        
+        const text = await response.text();
+        
+        if (!text || text.trim() === '') {
+            console.warn('⚠️ Backup file is EMPTY, skipping restore');
+            return false;
+        }
+        
+        let folderBackup;
+        try {
+            folderBackup = JSON.parse(text);
+        } catch (parseError) {
+            console.warn('⚠️ Backup file is CORRUPTED:', parseError.message);
+            return false;
+        }
+        
+        if (!folderBackup || !folderBackup.orders || !Array.isArray(folderBackup.orders)) {
+            console.warn('⚠️ Backup file has invalid structure');
+            return false;
+        }
+        
+        if (folderBackup.orders.length === 0) {
+            console.log('ℹ️ Backup file has 0 orders, skipping');
             return false;
         }
         
         console.log('📦 Found backup in FixModDB folder, orders:', folderBackup.orders.length);
         
         const existingOrders = await getAllOrders();
-        if (existingOrders.length === 0) {
-            await importDataInternal(folderBackup);
-            console.log('✅ Restored from FixModDB folder');
-            return true;
+        if (existingOrders.length > 0) {
+            console.log('ℹ️ DB already has', existingOrders.length, 'orders, skipping folder restore');
+            return false;
         }
         
-        return false;
+        await importDataInternal(folderBackup);
+        console.log('✅ Restored from FixModDB folder');
+        return true;
+        
     } catch (error) {
         console.error('❌ Error restoring backup:', error);
         return false;
@@ -516,13 +676,8 @@ let isOnline = false;
 chrome.storage.sync.get(['apiUrl'], (result) => {
     if (result.apiUrl) {
         API_URL = result.apiUrl;
-        console.log('📡 API URL loaded from settings:', API_URL);
     }
 });
-
-// ============================================================
-// === ПРОВЕРКА СВЯЗИ С СЕРВЕРОМ ===
-// ============================================================
 
 async function checkServerConnection() {
     try {
@@ -541,7 +696,7 @@ async function checkServerConnection() {
 }
 
 // ============================================================
-// === ИМПОРТ ДАННЫХ (внутренний) ===
+// === ИМПОРТ ДАННЫХ ===
 // ============================================================
 
 async function importDataInternal(data) {
@@ -611,8 +766,6 @@ async function downloadPhoto(url, filename) {
             return;
         }
         
-        console.log('📥 Background: Downloading photo:', directUrl);
-        
         try {
             new URL(directUrl);
         } catch (e) {
@@ -620,31 +773,42 @@ async function downloadPhoto(url, filename) {
             return;
         }
         
-        // Получаем путь для скачивания
         const downloadPath = await getDownloadPath();
         let filenameOnly = filename || 'photo.jpg';
         
-        // Формируем полный путь для chrome.downloads
+        let useSaveAs = false;
         let fullPath = filenameOnly;
-        if (downloadPath) {
-            // Убираем лишние слеши
-            const cleanPath = downloadPath.replace(/\/+$/, '');
-            fullPath = `${cleanPath}/${filenameOnly}`;
+        
+        if (downloadPath && downloadPath.trim()) {
+            const cleanPath = downloadPath.replace(/\/+$/, '').replace(/\\+$/, '');
+            
+            const isAbsolute = cleanPath.startsWith('/') || /^[A-Za-z]:[\\/]/.test(cleanPath);
+            const isDesktop = cleanPath.includes('Desktop') || cleanPath.includes('Рабочий стол');
+            
+            if (isAbsolute || isDesktop) {
+                useSaveAs = true;
+                fullPath = filenameOnly;
+            } else {
+                fullPath = `${cleanPath}/${filenameOnly}`;
+            }
         }
         
-        console.log('📥 Downloading to:', fullPath);
-        
-        chrome.downloads.download({
+        const downloadOptions = {
             url: directUrl,
             filename: fullPath,
-            saveAs: false,
             conflictAction: 'uniquify'
-        }, (downloadId) => {
+        };
+        
+        if (useSaveAs) {
+            downloadOptions.saveAs = true;
+        } else {
+            downloadOptions.saveAs = false;
+        }
+        
+        chrome.downloads.download(downloadOptions, (downloadId) => {
             if (chrome.runtime.lastError) {
-                console.error('❌ Background: Download error:', chrome.runtime.lastError);
                 reject(new Error(chrome.runtime.lastError.message));
             } else {
-                console.log('✅ Background: Download started with ID:', downloadId);
                 resolve({ success: true, downloadId: downloadId, filename: fullPath });
             }
         });
@@ -658,7 +822,7 @@ async function downloadPhoto(url, filename) {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     
     if (request.type === 'SAVE_ORDER') {
-        console.log('💾 Saving order locally:', request.data.order_number);
+        console.log('💾 Saving order locally:', request.data.order_number, '| user:', request.data.current_user);
         
         saveOrderToDB(request.data)
             .then(() => {
@@ -749,7 +913,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.type === 'UPDATE_API_URL') {
         API_URL = request.url;
         chrome.storage.sync.set({ apiUrl: request.url });
-        console.log('📡 API URL updated:', API_URL);
         sendResponse({ success: true });
         return true;
     }
@@ -829,49 +992,32 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return true;
     }
     
-    // ============================================================
-    // === ВЫБОР ПАПКИ ===
-    // ============================================================
-    
     if (request.type === 'CHOOSE_FOLDER') {
         getDownloadPath().then(path => {
-            sendResponse({ 
-                success: true, 
-                path: path,
-                message: 'Enter folder path manually in the input field'
-            });
+            sendResponse({ success: true, path: path });
         });
         return true;
     }
     
-    // ============================================================
-    // === СКАЧИВАНИЕ ФОТО ===
-    // ============================================================
-    
     if (request.type === 'DOWNLOAD_PHOTO') {
-        console.log('📥 Download photo request:', request.url);
-        
         downloadPhoto(request.url, request.filename)
             .then(result => {
                 sendResponse({ success: true, data: result });
             })
             .catch(error => {
-                console.error('❌ Download failed:', error);
                 sendResponse({ success: false, error: error.message });
             });
         return true;
     }
     
     if (request.type === 'DOWNLOAD_MULTIPLE_PHOTOS') {
-        console.log('📥 Download multiple photos:', request.photos?.length || 0);
-        
         const photos = request.photos || [];
         const results = [];
         
         Promise.all(photos.map(async (photo, index) => {
             try {
                 const filename = photo.filename || `photo_${index + 1}.jpg`;
-                const result = await downloadPhoto(photo.url, filename);
+                await downloadPhoto(photo.url, filename);
                 results.push({ success: true, url: photo.url });
             } catch (error) {
                 results.push({ success: false, url: photo.url, error: error.message });
@@ -891,10 +1037,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         
         return true;
     }
-    
-    // ============================================================
-    // === НОВЫЕ ОБРАБОТЧИКИ ДЛЯ ГЛОБАЛЬНОЙ ТЕМЫ ===
-    // ============================================================
     
     if (request.type === 'GET_GLOBAL_THEME') {
         getGlobalTheme()
@@ -934,12 +1076,11 @@ setInterval(() => {
 }, 15000);
 
 setInterval(async () => {
-    console.log('🔄 Scheduled backup (every 6 hours)...');
+    console.log('🔄 Scheduled backup (every 2 hours)...');
     await doubleBackup();
-}, 6 * 60 * 60 * 1000);
+}, 2 * 60 * 60 * 1000);
 
 chrome.runtime.onSuspend.addListener(async () => {
-    console.log('🔄 Browser closing, creating backup...');
     await doubleBackup();
 });
 
@@ -968,18 +1109,12 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     const orders = await getAllOrders();
     
     if (orders.length === 0) {
-        console.log('🔍 No data in DB, trying to restore...');
         const restored = await restoreFromBackup();
-        
         if (restored) {
-            console.log('✅ Data restored from backup!');
             await chrome.storage.local.set({ 'fixmod_restored': true });
         } else {
-            console.log('ℹ️ No backup found, starting fresh');
             await updateStatistics();
         }
-    } else {
-        console.log('✅ Database already has', orders.length, 'orders');
     }
     
     await updateBadge();
@@ -987,7 +1122,6 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 });
 
 chrome.runtime.onStartup.addListener(async () => {
-    console.log('🔄 FixMod started');
     await checkServerConnection();
     await updateBadge();
 });

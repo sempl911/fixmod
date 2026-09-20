@@ -6,22 +6,39 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
-        /* ===== СВЕТЛАЯ ТЕМА ===== */
+        /* ===== CSS VARIABLES ===== */
+        :root {
+            --theme-c1: #667eea;
+            --theme-c2: #764ba2;
+            --theme-c1-light: rgba(102, 126, 234, 0.15);
+            --theme-c1-medium: rgba(102, 126, 234, 0.3);
+            --theme-c1-strong: rgba(102, 126, 234, 0.5);
+            --theme-text: #1a1a2e;
+            --theme-bg: #e8eaed;
+            --theme-card-bg: #ffffff;
+            --theme-header-bg: #d1d5db;
+            --theme-border: #d1d5db;
+            --theme-muted: #6b7280;
+        }
+        
         body {
-            width: 280px;
+            width: 320px;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #e8eaed;
+            background: var(--theme-bg);
             padding: 0;
             margin: 0;
             transition: background 0.3s;
         }
+        
+        /* ===== HEADER ===== */
         .header {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 10px 14px;
-            background: #d1d5db;
+            padding: 14px 16px;
+            background: linear-gradient(135deg, var(--theme-c1) 0%, var(--theme-c2) 100%);
             transition: background 0.3s;
+            color: white;
         }
         .header-left {
             display: flex;
@@ -29,185 +46,189 @@
             gap: 10px;
         }
         .header-left img {
-            width: 28px;
-            height: 28px;
-            border-radius: 6px;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            filter: drop-shadow(0 1px 2px rgba(0,0,0,0.2));
         }
         .header-left .title {
-            font-size: 16px;
+            font-size: 17px;
             font-weight: 700;
-            color: #1a1a2e;
-            transition: color 0.3s;
+            color: white;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.15);
         }
         .header-left .version {
             font-size: 10px;
-            color: #6b7280;
+            color: rgba(255,255,255,0.85);
             margin-left: 4px;
-            transition: color 0.3s;
         }
         .settings-btn {
-            background: rgba(0,0,0,0.06);
+            background: rgba(255,255,255,0.2);
             border: none;
-            border-radius: 6px;
+            border-radius: 8px;
             cursor: pointer;
-            padding: 4px 8px;
+            padding: 6px 10px;
             transition: background 0.2s;
             display: flex;
             align-items: center;
             justify-content: center;
+            backdrop-filter: blur(10px);
         }
         .settings-btn:hover {
-            background: rgba(0,0,0,0.1);
+            background: rgba(255,255,255,0.35);
         }
         .settings-btn img {
             width: 20px;
             height: 20px;
             display: block;
+            filter: brightness(0) invert(1);
         }
 
         .content {
-            padding: 14px;
+            padding: 16px;
         }
         
+        /* ===== STAT CARDS ===== */
         .stats-grid {
             display: grid;
             grid-template-columns: 1fr 1fr 1fr;
-            gap: 8px;
-            margin-bottom: 12px;
+            gap: 10px;
+            margin-bottom: 14px;
         }
         .stat-card {
-            background: #ffffff;
-            border-radius: 10px;
-            padding: 10px 6px;
+            background: var(--theme-card-bg);
+            border-radius: 12px;
+            padding: 14px 8px;
             text-align: center;
             box-shadow: 0 1px 3px rgba(0,0,0,0.06);
             cursor: pointer;
-            transition: transform 0.15s, background 0.3s, box-shadow 0.3s;
+            transition: transform 0.15s, background 0.3s, box-shadow 0.3s, border-color 0.3s;
+            border: 2px solid transparent;
+            position: relative;
+            overflow: hidden;
+        }
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--theme-c1) 0%, var(--theme-c2) 100%);
+            opacity: 0.7;
         }
         .stat-card:hover {
-            transform: scale(1.02);
+            transform: translateY(-2px);
+            border-color: var(--theme-c1);
+            box-shadow: 0 4px 12px var(--theme-c1-medium);
         }
+
+        /* ===== STAT NUMBERS ===== */
+        /* По умолчанию ЧЁРНЫЕ — JS перезапишет через inline style */
         .stat-number {
-            font-size: 22px;
-            font-weight: 700;
+            font-size: 24px;
+            font-weight: 800;
             color: #1a1a2e;
             transition: color 0.3s;
+            line-height: 1.1;
         }
-        .stat-number.green { color: #34c759; }
-        .stat-number.purple { color: #393F49; transition: color 0.3s; }
+
+        /* Дефолтные цвета — JS перезапишет */
+        .stat-number.purple {
+            color: #667eea;
+        }
+
+        .stat-number.green {
+            color: #2db84e;
+        }
+
+        /* ===== STAT LABELS ===== */
         .stat-label {
             font-size: 9px;
             color: #6b7280;
-            margin-top: 2px;
+            margin-top: 4px;
             text-transform: uppercase;
-            letter-spacing: 0.3px;
+            letter-spacing: 0.5px;
+            font-weight: 600;
             transition: color 0.3s;
         }
         
+        /* ===== BUTTONS ===== */
         .btn-group {
             display: flex;
-            gap: 8px;
+            gap: 10px;
         }
         .btn {
             flex: 1;
-            padding: 8px 0;
+            padding: 10px 0;
             border: none;
-            border-radius: 8px;
-            font-size: 12px;
-            font-weight: 500;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 600;
             cursor: pointer;
             transition: all 0.15s;
-            background: #ffffff;
-            color: #1a1a2e;
+            background: var(--theme-card-bg);
+            color: var(--theme-text);
             box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+            font-family: inherit;
         }
         .btn:hover {
-            background: #e5e7eb;
+            transform: translateY(-1px);
+            box-shadow: 0 3px 8px rgba(0,0,0,0.1);
         }
         .btn-primary {
-            background: #393F49;
+            background: linear-gradient(135deg, var(--theme-c1) 0%, var(--theme-c2) 100%);
             color: white;
+            box-shadow: 0 2px 8px var(--theme-c1-medium);
         }
-        .btn-primary:hover { background: #2c313a; }
+        .btn-primary:hover { 
+            box-shadow: 0 4px 14px var(--theme-c1-strong);
+        }
         
+        /* ===== FOOTER ===== */
         .footer {
-            padding-top: 10px;
-            border-top: 1px solid #d1d5db;
-            font-size: 9px;
-            color: #6b7280;
+            padding-top: 14px;
+            margin-top: 14px;
+            border-top: 1px solid var(--theme-border);
+            font-size: 11px;
+            color: var(--theme-muted);
             text-align: center;
             transition: border-color 0.3s, color 0.3s;
         }
         .footer .highlight {
-            font-weight: 500;
-            color: #393F49;
+            font-weight: 700;
+            color: var(--theme-c1);
             transition: color 0.3s;
         }
         
         .version-bottom {
-            font-size: 8px;
-            color: #6b7280;
-            opacity: 0.4;
-            margin-top: 6px;
+            font-size: 9px;
+            color: var(--theme-muted);
+            opacity: 0.6;
+            margin-top: 8px;
             text-align: center;
             transition: color 0.3s;
         }
 
         /* ===== ТЕМНАЯ ТЕМА ===== */
         body.dark {
-            background: #1C2027;
+            --theme-text: #e5e7eb;
+            --theme-bg: #1C2027;
+            --theme-card-bg: #131924;
+            --theme-header-bg: #131924;
+            --theme-border: #1C2027;
+            --theme-muted: #6b7280;
         }
-        body.dark .header {
-            background: #131924;
-        }
-        body.dark .header-left .title {
-            color: #e5e7eb;
-        }
-        body.dark .header-left .version {
-            color: #6b7280;
-        }
-        body.dark .settings-btn {
-            background: rgba(255,255,255,0.06);
-        }
-        body.dark .settings-btn:hover {
-            background: rgba(255,255,255,0.1);
-        }
+        
         body.dark .stat-card {
-            background: #131924;
             box-shadow: 0 1px 3px rgba(0,0,0,0.3);
         }
-        body.dark .stat-number {
-            color: #e5e7eb;
-        }
-        body.dark .stat-number.purple {
-            color: #e5e7eb;
-        }
-        body.dark .stat-label {
-            color: #6b7280;
+        body.dark .stat-card:hover {
+            box-shadow: 0 4px 12px var(--theme-c1-medium);
         }
         body.dark .btn {
-            background: #131924;
-            color: #e5e7eb;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
         }
-        body.dark .btn:hover {
-            background: #1C2027;
-        }
-        body.dark .btn-primary {
-            background: #393F49;
-            color: white;
-        }
-        body.dark .btn-primary:hover { background: #2c313a; }
-        body.dark .footer {
-            border-color: #1C2027;
-            color: #6b7280;
-        }
-        body.dark .footer .highlight {
-            color: #e5e7eb;
-        }
-        body.dark .version-bottom {
-            color: #6b7280;
-        }
-        /* Иконка просто показывается, без фильтров */
     </style>
 </head>
 <body>
@@ -247,7 +268,7 @@
             <span class="highlight" id="orders-count">0 orders</span>
         </div>
 
-        <div class="version-bottom" id="version-info">FixMod v1.0.1</div>
+        <div class="version-bottom" id="version-info">FixMod v1.0.3</div>
     </div>
 
     <script src="popup.js"></script>
