@@ -33,80 +33,6 @@ function hexToRgba(hex, alpha = 1) {
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-// ============================================================
-// === ПРИМЕНЕНИЕ ТЕМЫ ===
-// ============================================================
-
-function applyTheme(themeId) {
-    const theme = POPUP_COLOR_SCHEMES[themeId] || POPUP_COLOR_SCHEMES.default;
-    
-    console.log('🎨 Popup: тема:', themeId, '| c1:', theme.c1, '| whiteNumbers:', theme.whiteNumbers);
-    
-    // CSS-переменные
-    const root = document.documentElement;
-    root.style.setProperty('--theme-c1', theme.c1);
-    root.style.setProperty('--theme-c2', theme.c2);
-    root.style.setProperty('--theme-c1-light', hexToRgba(theme.c1, 0.15));
-    root.style.setProperty('--theme-c1-medium', hexToRgba(theme.c1, 0.3));
-    root.style.setProperty('--theme-c1-strong', hexToRgba(theme.c1, 0.5));
-    
-    // Класс dark (для фона и др.)
-    document.body.classList.toggle('dark', theme.isDark);
-    
-    // 👇 ЦВЕТ ЦИФР
-    const numberColor = theme.whiteNumbers ? '#ffffff' : '#1a1a2e';
-    const labelColor = theme.whiteNumbers ? '#9ca3af' : '#6b7280';
-    
-    console.log('🎨 Цифры будут:', numberColor);
-    
-    // Total
-    const totalCount = document.getElementById('total-count');
-    if (totalCount) {
-        totalCount.style.setProperty('color', numberColor, 'important');
-    }
-    
-    // Today — используем c1, но адаптируем для контраста
-    const todayCount = document.getElementById('today-count');
-    if (todayCount) {
-        let todayColor = theme.c1;
-        
-        if (theme.whiteNumbers) {
-            // На тёмном фоне — осветляем c1 если слишком тёмный
-            todayColor = lightenColor(theme.c1, 60);
-        } else {
-            // На светлом фоне — затемняем c1 если слишком светлый
-            todayColor = darkenColor(theme.c1, 30);
-        }
-        
-        todayCount.style.setProperty('color', todayColor, 'important');
-        console.log('🎨 Today цвет:', todayColor);
-    }
-    
-    // Repaired — зелёный
-    const repairedCount = document.getElementById('repaired-count');
-    if (repairedCount) {
-        repairedCount.style.setProperty('color', theme.whiteNumbers ? '#34c759' : '#2db84e', 'important');
-    }
-    
-    // Labels
-    document.querySelectorAll('.stat-label').forEach(el => {
-        el.style.setProperty('color', labelColor, 'important');
-    });
-}
-
-// ============================================================
-// === ЦВЕТОВЫЕ УТИЛИТЫ ===
-// ============================================================
-
-function getBrightness(hex) {
-    hex = hex.replace('#', '');
-    if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
-    const r = parseInt(hex.substr(0, 2), 16);
-    const g = parseInt(hex.substr(2, 2), 16);
-    const b = parseInt(hex.substr(4, 2), 16);
-    return (r * 299 + g * 587 + b * 114) / 1000;
-}
-
 function darkenColor(hex, percent) {
     hex = hex.replace('#', '');
     if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
@@ -133,6 +59,65 @@ function lightenColor(hex, percent) {
     b = Math.min(255, Math.floor(b + (255 - b) * percent / 100));
     
     return `rgb(${r}, ${g}, ${b})`;
+}
+
+// ============================================================
+// === ПРИМЕНЕНИЕ ТЕМЫ ===
+// ============================================================
+
+function applyTheme(themeId) {
+    const theme = POPUP_COLOR_SCHEMES[themeId] || POPUP_COLOR_SCHEMES.default;
+    
+    console.log('🎨 Popup: тема:', themeId, '| c1:', theme.c1, '| whiteNumbers:', theme.whiteNumbers);
+    
+    // CSS-переменные
+    const root = document.documentElement;
+    root.style.setProperty('--theme-c1', theme.c1);
+    root.style.setProperty('--theme-c2', theme.c2);
+    root.style.setProperty('--theme-c1-light', hexToRgba(theme.c1, 0.15));
+    root.style.setProperty('--theme-c1-medium', hexToRgba(theme.c1, 0.3));
+    root.style.setProperty('--theme-c1-strong', hexToRgba(theme.c1, 0.5));
+    
+    // Класс dark
+    document.body.classList.toggle('dark', theme.isDark);
+    
+    // Цвета цифр
+    const numberColor = theme.whiteNumbers ? '#ffffff' : '#1a1a2e';
+    const labelColor = theme.whiteNumbers ? '#9ca3af' : '#6b7280';
+    
+    console.log('🎨 Цифры будут:', numberColor);
+    
+    // Avg / 30d — цвет по теме
+    const avg30d = document.getElementById('avg-30d');
+    if (avg30d) {
+        avg30d.style.setProperty('color', numberColor, 'important');
+    }
+    
+    // Today — c1 адаптированный
+    const todayCount = document.getElementById('today-count');
+    if (todayCount) {
+        let todayColor = theme.c1;
+        
+        if (theme.whiteNumbers) {
+            todayColor = lightenColor(theme.c1, 60);
+        } else {
+            todayColor = darkenColor(theme.c1, 30);
+        }
+        
+        todayCount.style.setProperty('color', todayColor, 'important');
+        console.log('🎨 Today цвет:', todayColor);
+    }
+    
+    // Ready today — зелёный
+    const repairedTodayCount = document.getElementById('repaired-today-count');
+    if (repairedTodayCount) {
+        repairedTodayCount.style.setProperty('color', theme.whiteNumbers ? '#34c759' : '#2db84e', 'important');
+    }
+    
+    // Labels
+    document.querySelectorAll('.stat-label').forEach(el => {
+        el.style.setProperty('color', labelColor, 'important');
+    });
 }
 
 // ============================================================
@@ -202,25 +187,38 @@ async function loadStats() {
         chrome.runtime.sendMessage({ type: 'GET_STATS' }, (response) => {
             if (response && response.success) {
                 const stats = response.data;
+                
+                // 👇 3 колонки: Today / Ready today / Avg 30d
                 document.getElementById('today-count').textContent = stats.today_count || 0;
-                document.getElementById('repaired-count').textContent = stats.repaired_count || 0;
-                document.getElementById('total-count').textContent = stats.total_orders || 0;
+                document.getElementById('repaired-today-count').textContent = stats.repaired_today_count || 0;
+                document.getElementById('avg-30d').textContent = (stats.avg_30d || 0).toFixed(1);
+                
+                // Footer
                 document.getElementById('orders-count').textContent = (stats.total_orders || 0) + ' orders';
+                
+                console.log('📊 Popup stats:', {
+                    today: stats.today_count,
+                    repairedToday: stats.repaired_today_count,
+                    avg30d: stats.avg_30d,
+                    total: stats.total_orders,
+                    total30d: stats.total_orders_30d,
+                    workingDays30d: stats.working_days_30d
+                });
             } else {
                 document.getElementById('today-count').textContent = '?';
-                document.getElementById('repaired-count').textContent = '?';
-                document.getElementById('total-count').textContent = '?';
+                document.getElementById('repaired-today-count').textContent = '?';
+                document.getElementById('avg-30d').textContent = '?';
                 document.getElementById('orders-count').textContent = '0 orders';
             }
             
-            // 👇 После обновления цифр — переприменяем цвет
-            const themeResult = chrome.storage.local.get(['widgetTheme'], (r) => {
+            // После обновления цифр — переприменяем цвет
+            chrome.storage.local.get(['widgetTheme'], (r) => {
                 const themeId = r.widgetTheme || 'default';
                 const theme = POPUP_COLOR_SCHEMES[themeId] || POPUP_COLOR_SCHEMES.default;
                 const numberColor = theme.whiteNumbers ? '#ffffff' : '#1a1a2e';
                 
-                const totalCount = document.getElementById('total-count');
-                if (totalCount) totalCount.style.setProperty('color', numberColor, 'important');
+                const avg30d = document.getElementById('avg-30d');
+                if (avg30d) avg30d.style.setProperty('color', numberColor, 'important');
                 
                 const labelColor = theme.whiteNumbers ? '#9ca3af' : '#6b7280';
                 document.querySelectorAll('.stat-label').forEach(el => {

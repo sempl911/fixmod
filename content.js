@@ -3,7 +3,7 @@
 console.log('🔧 FixMod Content Script Started');
 
 // ============================================================
-// ⚙️ НАСТРОЙКИ ЗАДЕРЖЕК (ЛЕГКО МЕНЯТЬ ЗДЕСЬ) ⚙️
+// ⚙️ НАСТРОЙКИ ЗАДЕРЖЕК
 // ============================================================
 
 const DELAYS = {
@@ -44,28 +44,19 @@ if (typeof SuggestionsManager !== 'undefined') {
 // === 👤 ОПРЕДЕЛЕНИЕ ТЕКУЩЕГО ПОЛЬЗОВАТЕЛЯ ===
 // ============================================================
 
-let currentUser = null;   // Имя залогиненного пользователя
+let currentUser = null;
 
-/**
- * Получить имя залогиненного пользователя со страницы Fixably
- * Работает на любой странице: заказ, список заказов, главная
- */
 function getCurrentUser() {
-    // Способ 1: из навбара (самый надёжный)
     const userBold = document.querySelector('.mnu-user b');
     if (userBold) {
-        // Клонируем чтобы не менять оригинал
         const clone = userBold.cloneNode(true);
-        // Убираем иконки (стрелочки, значки)
         clone.querySelectorAll('i, svg').forEach(el => el.remove());
         const name = clone.textContent.trim();
-        
         if (name && name.length > 1 && name.length < 50) {
             return name;
         }
     }
     
-    // Fallback: из #user-options-dropdown
     const dropdown = document.querySelector('#user-options-dropdown b');
     if (dropdown) {
         const clone = dropdown.cloneNode(true);
@@ -79,9 +70,6 @@ function getCurrentUser() {
     return null;
 }
 
-/**
- * Обновить имя пользователя и сохранить в storage
- */
 async function updateCurrentUser() {
     const user = getCurrentUser();
     
@@ -90,7 +78,6 @@ async function updateCurrentUser() {
         return null;
     }
     
-    // Если имя изменилось — сохраняем
     if (user !== currentUser) {
         currentUser = user;
         console.log('👤 Текущий пользователь:', user);
@@ -109,7 +96,6 @@ async function updateCurrentUser() {
     return user;
 }
 
-// Загружаем имя сразу при старте
 (async () => {
     const user = getCurrentUser();
     if (user) {
@@ -384,6 +370,7 @@ function getIMEI() {
 // ============================================================
 
 function parseDateFromText(text) {
+    // "Monday 7 September 2026"
     const dateMatch = text.match(/(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+(\d{1,2})\s+(\w+)\s+(\d{4})/i);
     if (dateMatch) {
         const day = parseInt(dateMatch[2]);
@@ -412,8 +399,121 @@ function getMonthNumber(monthName) {
     return months[monthName.toLowerCase()] || 0;
 }
 
+/**
+ * Парсит время из строки типа "13:00", "01:00 PM", "11:15 AM"
+ */
+function parseTimeText(timeText) {
+    if (!timeText) return null;
+    
+    const match = timeText.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+    if (!match) return null;
+    
+    let hours = parseInt(match[1]);
+    const minutes = parseInt(match[2]);
+    const meridiem = match[3] ? match[3].toUpperCase() : null;
+    
+    if (meridiem === 'PM' && hours < 12) {
+        hours += 12;
+    } else if (meridiem === 'AM' && hours === 12) {
+        hours = 0;
+    } else if (!meridiem && hours < 6) {
+        // Старый формат без AM/PM
+        hours += 12;
+    }
+    
+    return { hours, minutes };
+}
+
 // ============================================================
-// === ТАЙМЛАЙН ===
+// === ОЖИДАНИЕ ГОТОВНОСТИ ТАЙМЛАЙНА ===
+// ============================================================
+
+function waitForTimelineReady(onReady, timeoutMs = 15000) {
+    if (!isOrderPage()) {
+        return;
+    }
+    
+    const startTime = Date.now();
+    
+    if (isTimelineReady()) {
+        console.log('✅ Timeline уже готов');
+        onReady();
+        return;
+    }
+    
+    let observer = null;
+    let timeoutId = null;
+    let pollInterval = null;
+    
+    const cleanup = () => {
+        if (observer) observer.disconnect();
+        if (timeoutId) clearTimeout(timeoutId);
+        if (pollInterval) clearInterval(pollInterval);
+    };
+    
+    const check = () => {
+        if (isTimelineReady()) {
+            const elapsed = Date.now() - startTime;
+            console.log(`✅ Timeline готов за ${elapsed} мс`);
+            cleanup();
+            onReady();
+            return true;
+        }
+        return false;
+    };
+    
+    const timelineEl = document.getElementById('order-timeline');
+    if (timelineEl) {
+        observer = new MutationObserver(() => {
+            check();
+        });
+        
+        observer.observe(timelineEl, {
+            childList: true,
+            subtree: true
+        });
+    }
+    
+    timeoutId = setTimeout(() => {
+        if (!check()) {
+            console.warn(`⚠️ Timeline не готов за ${timeoutMs} мс — сохраняем что есть`);
+            cleanup();
+            onReady();
+        }
+    }, timeoutMs);
+    
+    pollInterval = setInterval(() => {
+        if (check()) {
+            clearInterval(pollInterval);
+        }
+    }, 300);
+}
+
+function isTimelineReady() {
+    const timelineEl = document.getElementById('order-timeline');
+    if (!timelineEl) return false;
+    
+    const panels = timelineEl.querySelectorAll('.timeline-panel');
+    if (panels.length > 0) return true;
+    
+    const loadingSpinner = timelineEl.querySelector('.panel-body-loading-center');
+    if (!loadingSpinner) {
+        const timelineList = timelineEl.querySelector('ul.timeline');
+        if (timelineList) return true;
+    }
+    
+    return false;
+}
+
+function getCleanText(el) {
+    if (!el) return '';
+    let text = el.textContent || '';
+    text = text.replace(/\s+/g, ' ').trim();
+    return text;
+}
+
+// ============================================================
+// === ТАЙМЛАЙН (С ФИКСОМ ?no_events) ===
 // ============================================================
 
 async function getTimelineData() {
@@ -428,9 +528,17 @@ async function getTimelineData() {
         return null;
     }
 
-    const url = timelineContainer.dataset.href;
+    let url = timelineContainer.dataset.href;
     if (!url) {
         return null;
+    }
+
+    // 👇 ФИКС: убираем ?no_events — иначе Fixably отдаёт урезанный таймлайн,
+    // у которого у некоторых резолюций нет даты (date: null).
+    const originalUrl = url;
+    url = url.replace(/([?&])no_events(&|$)/, '$1').replace(/[?&]$/, '');
+    if (originalUrl !== url) {
+        console.log('🔧 URL очищен от ?no_events:', url);
     }
 
     try {
@@ -458,7 +566,7 @@ async function getTimelineData() {
         console.log(`📦 Найдено панелей: ${panels.length}`);
 
         panels.forEach((panel) => {
-            const fullText = panel.innerText || panel.textContent || '';
+            const fullText = getCleanText(panel);
             const timeEl = panel.querySelector('.timeline-time');
             const timeText = timeEl ? timeEl.textContent.trim() : null;
 
@@ -470,12 +578,10 @@ async function getTimelineData() {
             let fullDate = null;
             if (eventDate) {
                 if (timeText) {
-                    const timeMatch = timeText.match(/(\d{1,2}):(\d{2})/);
-                    if (timeMatch) {
-                        let hours = parseInt(timeMatch[1]);
-                        const minutes = parseInt(timeMatch[2]);
-                        if (hours < 6) hours += 12;
-                        eventDate.setHours(hours, minutes, 0, 0);
+                    // Корректный парсинг AM/PM
+                    const parsedTime = parseTimeText(timeText);
+                    if (parsedTime) {
+                        eventDate.setHours(parsedTime.hours, parsedTime.minutes, 0, 0);
                     }
                 }
                 fullDate = eventDate.toISOString();
@@ -575,12 +681,10 @@ async function getTimelineData() {
 }
 
 // ============================================================
-// === RESOLUTION ===
+// === RESOLUTION (по DOM) ===
 // ============================================================
 
 function getResolution() {
-    // console.log('🔍 Searching for diagnosis text...');
-    
     if (!isOrderPage()) {
         return null;
     }
@@ -627,41 +731,6 @@ function getResolution() {
                     }
                 }
             }
-            
-            if (!foundResolutions.length || foundResolutions[foundResolutions.length - 1].text === '') {
-                const container = panel.querySelector('.content-container.toggle-full-content');
-                if (container) {
-                    const containerText = container.innerText || container.textContent || '';
-                    const trimmed = containerText.trim();
-                    
-                    if (trimmed && trimmed.length > 10 && 
-                        !trimmed.includes('Diagnosis') &&
-                        !trimmed.includes('Diagnostic') &&
-                        !trimmed.includes('Order created') &&
-                        !trimmed.includes('No information') &&
-                        !trimmed.includes('You canceled') &&
-                        !trimmed.includes('canceled this order') &&
-                        !trimmed.includes('Please select the reason') &&
-                        !trimmed.includes('Visual inspection') &&
-                        !trimmed.includes('Reported problems') &&
-                        !trimmed.includes('Battery malfunction')) {
-                        
-                        let type = 'unknown';
-                        if (text.includes('Resolution')) {
-                            type = 'resolution';
-                        } else if (text.includes('Diagnosis')) {
-                            type = 'diagnosis';
-                        }
-                        
-                        foundResolutions.push({
-                            type: type,
-                            text: trimmed,
-                            panel: panel,
-                            timestamp: panel.querySelector('.timeline-time')?.innerText || ''
-                        });
-                    }
-                }
-            }
         }
     }
     
@@ -679,7 +748,6 @@ function getResolution() {
     }
     
     if (bestMatch) {
-        // console.log(`✅ ${bestMatch.type} found:`, bestMatch.text);
         return bestMatch.text;
     }
     
@@ -717,7 +785,7 @@ async function collectOrderData() {
         status_code: null,
         technician: null,
         technician_id: null,
-        current_user: null,        // 👈 НОВОЕ: имя залогиненного
+        current_user: null,
         customer: null,
         customer_id: null,
         customer_email: null,
@@ -749,12 +817,19 @@ async function collectOrderData() {
         data.technician = technician;
     }
 
-    // 👇 ТЕКУЩИЙ ПОЛЬЗОВАТЕЛЬ (кто работает в системе)
-    const user = currentUser || getCurrentUser();
-    if (user) {
-        data.current_user = user;
-        // Сохраняем в storage на всякий случай
-        chrome.storage.local.set({ fixmod_current_user: user });
+    // 👇 ФИКС: current_user = техник заказа, а не тот, кто открыл страницу.
+    // Это гарантирует, что если ты открыл чужой заказ — он НЕ попадёт в твою статистику.
+    const loggedInUser = currentUser || getCurrentUser();
+    const orderTechnician = technician;
+
+    if (orderTechnician) {
+        data.current_user = orderTechnician;
+    } else if (loggedInUser) {
+        data.current_user = loggedInUser;
+    }
+
+    if (loggedInUser) {
+        chrome.storage.local.set({ fixmod_current_user: loggedInUser });
     }
 
     const deviceName = getDeviceName();
@@ -789,9 +864,16 @@ async function collectOrderData() {
         data.diagnoses = timelineData.diagnoses || [];
         data.resolutions = timelineData.resolutions || [];
         
+        // 👇 ФИКС: берём САМУЮ СВЕЖУЮ резолюцию по дате (а не последнюю в массиве)
         if (data.resolutions.length > 0) {
-            const lastResolution = data.resolutions[data.resolutions.length - 1];
-            data.resolution = lastResolution.text;
+            const withDate = data.resolutions.filter(r => r && r.date);
+            
+            if (withDate.length > 0) {
+                withDate.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                data.resolution = withDate[0].text;
+            } else {
+                data.resolution = data.resolutions[data.resolutions.length - 1].text;
+            }
         }
     }
 
@@ -859,8 +941,33 @@ function shouldSaveData(currentData) {
         return false;
     }
 
+    const closedStatuses = ['ready', 'shipped', 'cancelled', 'withdraw', 'picked_up', 'waiting_shipping'];
+    const needsResolution = closedStatuses.includes(currentData.status_code);
+    const hasResolution = currentData.resolutions && currentData.resolutions.length > 0;
+    
+    if (needsResolution && !hasResolution) {
+        console.log('⏳ Статус', currentData.status_code, '— ждём резолюцию, не сохраняем');
+        return false;
+    }
+
+    // 👇 ФИКС: если current_user не совпадает с technician — сохраняем (миграция старых записей)
+    if (currentData.technician && currentData.current_user !== currentData.technician) {
+        console.log('👤 current_user не совпадает с technician → сохраняем');
+        return true;
+    }
+
     if (isFirstLoad) {
-        console.log('📦 First load, saving initial data');
+        if (needsResolution) {
+            if (hasResolution) {
+                console.log('📦 First load (closed status + resolution) — saving');
+                isFirstLoad = false;
+                return true;
+            }
+            console.log('⏳ First load: ждём резолюцию для', currentData.status_code);
+            return false;
+        }
+        
+        console.log('📦 First load (open status) — saving');
         isFirstLoad = false;
         return true;
     }
@@ -972,7 +1079,10 @@ async function saveOrderLocally() {
         imei: currentData.imei,
         technician: currentData.technician,
         current_user: currentData.current_user,
-        has_technician: hasTechnician()
+        status_code: currentData.status_code,
+        resolutions: currentData.resolutions.length,
+        diagnoses: currentData.diagnoses.length,
+        resolution: currentData.resolution
     });
     
     if (!shouldSaveData(currentData)) {
@@ -1178,7 +1288,6 @@ function updateAllData() {
     const offerTitle = getOfferTitle();
     const deviceName = getDeviceName();
     
-    // Обновляем имя пользователя
     updateCurrentUser();
     
     const headerTitle = document.getElementById('widget-header-title');
@@ -1234,7 +1343,9 @@ function updateAllData() {
     console.log('SO:', orderNumber);
     console.log('User:', currentUser);
     
-    saveOrderLocally();
+    waitForTimelineReady(() => {
+        saveOrderLocally();
+    }, 15000);
 }
 
 // ============================================================
@@ -1320,7 +1431,6 @@ function waitForIMEI() {
                 imeiRetryCount = 0;
             }
             clearInterval(checkInterval);
-            saveOrderLocally();
         } else if (attempts >= maxAttempts) {
             clearInterval(checkInterval);
         }
@@ -1346,7 +1456,6 @@ function checkForUrlChange() {
         lastDeviceModel = null;
         currentOrderNumber = null;
         
-        // Обновляем пользователя при смене URL
         updateCurrentUser();
         
         setTimeout(() => {
@@ -1394,17 +1503,10 @@ if (!window.location.href.includes('evy.fixably.com')) {
                 setupResolutionMonitoring();
             }, DELAYS.SETUP_MONITORING);
             
-            setTimeout(() => {
-                const deviceName = getDeviceName();
-                if (deviceName && deviceName !== 'FixMod Widget') {
-                    console.log('📱 Модель готова, сохраняем:', deviceName);
-                    saveOrderLocally();
-                } else {
-                    console.log('⏳ Модель ещё не загружена, ждём...');
-                    deviceRetryCount = 0;
-                    setTimeout(retryDeviceSearch, DELAYS.RETRY_DEVICE);
-                }
-            }, DELAYS.SAVE_ORDER);
+            waitForTimelineReady(() => {
+                console.log('💾 Timeline готов — сохраняем заказ при initWidget');
+                saveOrderLocally();
+            }, 15000);
             
             document.addEventListener('click', function(e) {
                 const target = e.target;

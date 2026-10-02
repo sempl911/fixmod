@@ -50,13 +50,46 @@ async function getDB() {
 }
 
 // ============================================================
-// === ФУНКЦИИ РАБОТЫ С БД ===
+// === ПРОВЕРКА: СТОИТ ЛИ ОБНОВЛЯТЬ МАССИВ ===
+// ============================================================
+
+function shouldUpdateArray(existingArr, newArr) {
+    const oldArr = existingArr || [];
+    const newList = newArr || [];
+    
+    if (newList.length > oldArr.length) {
+        return true;
+    }
+    
+    if (newList.length === 0 || newList.length < oldArr.length) {
+        return false;
+    }
+    
+    const oldHasEmptyDates = oldArr.some(item => !item || !item.date);
+    const newHasAllDates = newList.every(item => item && item.date);
+    
+    if (oldHasEmptyDates && newHasAllDates) {
+        console.log('🔧 Апгрейд: даты появились (было null → стало есть)');
+        return true;
+    }
+    
+    return false;
+}
+
+// ============================================================
+// === РАБОТА С БД ===
 // ============================================================
 
 async function saveOrderToDB(orderData) {
     const database = await getDB();
     const id = `order_${orderData.order_number}`;
     const now = new Date().toISOString();
+    
+    // 👇 current_user всегда = technician (если он есть)
+    if (orderData.technician && orderData.technician !== orderData.current_user) {
+        console.log('🔒 current_user принудительно = technician:', orderData.technician);
+        orderData = { ...orderData, current_user: orderData.technician };
+    }
     
     return new Promise((resolve, reject) => {
         const transaction = database.transaction(['orders', 'history'], 'readwrite');
@@ -65,18 +98,15 @@ async function saveOrderToDB(orderData) {
         
         const getRequest = ordersStore.get(id);
         
-        getRequest.onsuccess = async () => {
+        getRequest.onsuccess = () => {
             const existing = getRequest.result;
             let hasChanges = false;
             
             if (existing) {
-                // === СУЩЕСТВУЮЩИЙ ЗАКАЗ ===
-                
                 if (existing.status !== orderData.status) hasChanges = true;
                 if (existing.technician !== orderData.technician) hasChanges = true;
                 if (existing.resolution !== orderData.resolution) hasChanges = true;
                 
-                // Проверка current_user
                 if (existing.current_user !== orderData.current_user && orderData.current_user) {
                     console.log('👤 Обновляем current_user:', existing.current_user, '→', orderData.current_user);
                     hasChanges = true;
@@ -108,19 +138,18 @@ async function saveOrderToDB(orderData) {
                     hasChanges = true;
                 }
                 
-                // Проверка диагнозов
-                const existingDiagCount = (existing.diagnoses || []).length;
-                const newDiagCount = (orderData.diagnoses || []).length;
-                if (newDiagCount > existingDiagCount) {
-                    console.log('🔬 Обновляем diagnoses:', existingDiagCount, '→', newDiagCount);
+                if (shouldUpdateArray(existing.diagnoses, orderData.diagnoses)) {
+                    console.log('🔬 Обновляем diagnoses');
                     hasChanges = true;
                 }
                 
-                // Проверка резолюций
-                const existingResCount = (existing.resolutions || []).length;
-                const newResCount = (orderData.resolutions || []).length;
-                if (newResCount > existingResCount) {
-                    console.log('✅ Обновляем resolutions:', existingResCount, '→', newResCount);
+                if (shouldUpdateArray(existing.resolutions, orderData.resolutions)) {
+                    console.log('✅ Обновляем resolutions');
+                    hasChanges = true;
+                }
+                
+                if (shouldUpdateArray(existing.status_changes, orderData.status_changes)) {
+                    console.log('🔄 Обновляем status_changes');
                     hasChanges = true;
                 }
                 
@@ -150,7 +179,6 @@ async function saveOrderToDB(orderData) {
                     });
                 }
             } else {
-                // === НОВЫЙ ЗАКАЗ ===
                 console.log('🆕 Создаём заказ:', orderData.order_number, '| user:', orderData.current_user);
                 
                 const newOrder = {
@@ -174,9 +202,17 @@ async function saveOrderToDB(orderData) {
                 hasChanges = true;
             }
             
-            transaction.oncomplete = async () => {
-                await updateStatistics();
-                await updateBadge();
+            transaction.oncomplete = () => {
+                // Статистика и бейдж — ВНЕ транзакции, отложенно
+                setTimeout(async () => {
+                    try {
+                        await updateStatistics();
+                        await updateBadge();
+                    } catch (e) {
+                        console.warn('⚠️ Ошибка обновления статистики:', e);
+                    }
+                }, 0);
+                
                 resolve(id);
             };
             
@@ -188,20 +224,9 @@ async function saveOrderToDB(orderData) {
 }
 
 // ============================================================
-// === ОПРЕДЕЛЕНИЕ РАБОЧЕЙ ДАТЫ ЗАКАЗА ===
+// === РАБОЧАЯ ДАТА ЗАКАЗА ===
 // ============================================================
-//
-// Приоритет:
-// 1. Самая свежая резолюция (работа выполнена) 
-// 2. Самый свежий диагноз (работа в процессе)
-// 3. Самое свежее изменение статуса
-// 4. last_status_change
-// 5. created_at (крайний случай)
-//
-// ВАЖНО: берём САМУЮ СВЕЖУЮ дату, а не последний элемент в массиве
-// (Fixably отдаёт данные в порядке "от свежего к старому",
-//  но мы не зависим от порядка — сравниваем timestamps)
-//
+
 function getLatestDate(items) {
     if (!items || items.length === 0) return null;
     
@@ -209,12 +234,22 @@ function getLatestDate(items) {
     let latestTimestamp = 0;
     
     items.forEach(item => {
-        if (item && item.date) {
-            const ts = new Date(item.date).getTime();
-            if (!isNaN(ts) && ts > latestTimestamp) {
-                latestTimestamp = ts;
-                latestDate = item.date;
-            }
+        if (!item) return;
+        
+        const rawDate = item.date 
+                     || item.created_at 
+                     || item.updated_at 
+                     || item.timestamp 
+                     || item.finished_at;
+        
+        if (!rawDate) return;
+        
+        const ts = new Date(rawDate).getTime();
+        if (isNaN(ts) || ts <= 0) return;
+        
+        if (ts > latestTimestamp) {
+            latestTimestamp = ts;
+            latestDate = rawDate;
         }
     });
     
@@ -224,31 +259,68 @@ function getLatestDate(items) {
 function getOrderWorkDate(order) {
     if (!order) return null;
     
-    // 1. Резолюция — самая свежая (приоритет: работа выполнена)
-    const latestResolution = getLatestDate(order.resolutions);
-    if (latestResolution) return latestResolution;
+    if (order.resolutions && order.resolutions.length > 0) {
+        const latestResolution = getLatestDate(order.resolutions);
+        if (latestResolution) return latestResolution;
+        if (order.last_status_change) return order.last_status_change;
+        if (order.updated_at) return order.updated_at;
+        return order.created_at || null;
+    }
     
-    // 2. Диагноз — самый свежий (работа в процессе)
     const latestDiagnosis = getLatestDate(order.diagnoses);
     if (latestDiagnosis) return latestDiagnosis;
     
-    // 3. Изменение статуса — самое свежее
     const latestStatusChange = getLatestDate(order.status_changes);
     if (latestStatusChange) return latestStatusChange;
     
-    // 4. Изменение техника — самое свежее
     const latestHandlerChange = getLatestDate(order.handler_changes);
     if (latestHandlerChange) return latestHandlerChange;
     
-    // 5. last_status_change
     if (order.last_status_change) return order.last_status_change;
+    if (order.updated_at) return order.updated_at;
     
-    // 6. Крайний случай — created_at
     return order.created_at || null;
 }
 
+// ============================================================
+// === ОБНОВЛЕНИЕ СТАТИСТИКИ ===
+// ============================================================
+
 async function updateStatistics() {
     const database = await getDB();
+    
+    // 👇 Читаем календарь ЗАРАНЕЕ, до открытия транзакции
+    let customHolidays = new Set();
+    try {
+        const storageResult = await chrome.storage.local.get(['fixmod_holidays']);
+        if (storageResult.fixmod_holidays && Array.isArray(storageResult.fixmod_holidays)) {
+            customHolidays = new Set(storageResult.fixmod_holidays);
+        }
+    } catch (e) {
+        console.warn('⚠️ Не удалось загрузить выходные:', e);
+    }
+    
+    function isDayOffLocal(dateStr) {
+        const date = new Date(dateStr + 'T00:00:00');
+        const dow = date.getDay();
+        const isWeekend = dow === 0 || dow === 6;
+        const isCustom = customHolidays.has(dateStr);
+        return isWeekend || isCustom;
+    }
+    
+    function getWorkingDaysInRange(fromDate, toDate) {
+        let count = 0;
+        const cursor = new Date(fromDate);
+        cursor.setHours(0, 0, 0, 0);
+        const end = new Date(toDate);
+        end.setHours(23, 59, 59, 999);
+        while (cursor <= end) {
+            const dayStr = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
+            if (!isDayOffLocal(dayStr)) count++;
+            cursor.setDate(cursor.getDate() + 1);
+        }
+        return count;
+    }
     
     return new Promise((resolve, reject) => {
         const transaction = database.transaction(['orders', 'statistics'], 'readwrite');
@@ -266,14 +338,22 @@ async function updateStatistics() {
             const dailyStats = {};
             let repairedCount = 0;
             let todayCount = 0;
+            let repairedTodayCount = 0;
+            let totalOrders30d = 0;
             
-            const today = new Date().toISOString().slice(0, 10);
+            const now = new Date();
+            const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            
+            const thirtyDaysAgo = new Date(now);
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
+            thirtyDaysAgo.setHours(0, 0, 0, 0);
+            
+            const REPAIRED_STATUSES = ['ready', 'shipped', 'pickup', 'picked_up'];
             
             allOrders.forEach(order => {
                 const status = order.status_code || 'unknown';
                 statusCounts[status] = (statusCounts[status] || 0) + 1;
                 
-                // 👇 Используем РАБОЧУЮ ДАТУ (самую свежую из diagnoses/resolutions)
                 const workDate = getOrderWorkDate(order);
                 if (workDate) {
                     const month = workDate.substring(0, 7);
@@ -282,26 +362,51 @@ async function updateStatistics() {
                     const day = workDate.substring(0, 10);
                     dailyStats[day] = (dailyStats[day] || 0) + 1;
                     
-                    if (day === today) {
+                    if (day === todayStr) {
                         todayCount++;
+                        
+                        if (REPAIRED_STATUSES.includes(order.status_code)) {
+                            repairedTodayCount++;
+                        }
+                    }
+                    
+                    const orderDate = new Date(workDate);
+                    if (orderDate >= thirtyDaysAgo && orderDate <= now) {
+                        totalOrders30d++;
                     }
                 }
                 
-                if (order.status_code === 'ready' || order.status_code === 'pickup') {
+                if (REPAIRED_STATUSES.includes(order.status_code)) {
                     repairedCount++;
                 }
             });
+            
+            const workingDays30d = getWorkingDaysInRange(thirtyDaysAgo, now);
+            const avg30d = workingDays30d > 0 ? (totalOrders30d / workingDays30d) : 0;
             
             const stats = {
                 id: 'stats',
                 total_orders: totalOrders,
                 repaired_count: repairedCount,
+                repaired_today_count: repairedTodayCount,
                 today_count: todayCount,
+                avg_30d: parseFloat(avg30d.toFixed(1)),
+                total_orders_30d: totalOrders30d,
+                working_days_30d: workingDays30d,
                 status_counts: statusCounts,
                 monthly_stats: monthlyStats,
                 daily_stats: dailyStats,
                 last_updated: new Date().toISOString()
             };
+            
+            console.log('📊 Statistics updated:', {
+                today: todayCount,
+                repairedToday: repairedTodayCount,
+                avg30d: avg30d.toFixed(1),
+                totalOrders30d: totalOrders30d,
+                workingDays30d: workingDays30d,
+                total: totalOrders
+            });
             
             statsStore.put(stats);
             
@@ -312,6 +417,10 @@ async function updateStatistics() {
         getAllRequest.onerror = () => reject(getAllRequest.error);
     });
 }
+
+// ============================================================
+// === ЧТЕНИЕ ДАННЫХ ===
+// ============================================================
 
 async function getStatistics() {
     const database = await getDB();
@@ -326,7 +435,11 @@ async function getStatistics() {
                 id: 'stats',
                 total_orders: 0,
                 repaired_count: 0,
+                repaired_today_count: 0,
                 today_count: 0,
+                avg_30d: 0,
+                total_orders_30d: 0,
+                working_days_30d: 0,
                 status_counts: {},
                 monthly_stats: {},
                 daily_stats: {},
@@ -352,9 +465,9 @@ async function getAllOrders() {
 
 async function getTodaysOrders() {
     const allOrders = await getAllOrders();
-    const today = new Date().toISOString().slice(0, 10);
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     
-    // Используем рабочую дату
     return allOrders.filter(order => {
         const workDate = getOrderWorkDate(order);
         return workDate && workDate.slice(0, 10) === today;
@@ -383,10 +496,16 @@ async function clearAllData() {
         transaction.objectStore('history').clear();
         transaction.objectStore('statistics').clear();
         
-        transaction.oncomplete = async () => {
-            await updateStatistics();
-            await updateBadge();
-            await doubleBackup();
+        transaction.oncomplete = () => {
+            setTimeout(async () => {
+                try {
+                    await updateStatistics();
+                    await updateBadge();
+                    await doubleBackup();
+                } catch (e) {
+                    console.warn('⚠️ Ошибка после очистки:', e);
+                }
+            }, 0);
             resolve();
         };
         transaction.onerror = () => reject(transaction.error);
@@ -394,7 +513,7 @@ async function clearAllData() {
 }
 
 // ============================================================
-// === ДВОЙНОЙ АВТОМАТИЧЕСКИЙ БЭКАП ===
+// === ДВОЙНОЙ БЭКАП ===
 // ============================================================
 
 async function backupToFolder() {
@@ -419,7 +538,7 @@ async function backupToFolder() {
         const blob = new Blob([json], { type: 'application/json' });
         const reader = new FileReader();
         
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve) => {
             reader.onload = async function() {
                 try {
                     const dataUrl = reader.result;
@@ -510,7 +629,7 @@ async function doubleBackup() {
 }
 
 // ============================================================
-// === АВТОМАТИЧЕСКОЕ ВОССТАНОВЛЕНИЕ ===
+// === ВОССТАНОВЛЕНИЕ ===
 // ============================================================
 
 async function restoreFromBackup() {
@@ -608,7 +727,7 @@ async function restoreFromBackup() {
 }
 
 // ============================================================
-// === ОБНОВЛЕНИЕ БЕЙДЖА ===
+// === БЕЙДЖ ===
 // ============================================================
 
 async function updateBadge() {
@@ -632,7 +751,7 @@ async function updateBadge() {
 }
 
 // ============================================================
-// === ГЛОБАЛЬНАЯ ТЕМА ===
+// === ТЕМА ===
 // ============================================================
 
 const COLOR_SCHEMES = {
@@ -696,7 +815,7 @@ async function checkServerConnection() {
 }
 
 // ============================================================
-// === ИМПОРТ ДАННЫХ ===
+// === ИМПОРТ ===
 // ============================================================
 
 async function importDataInternal(data) {
@@ -716,10 +835,16 @@ async function importDataInternal(data) {
             transaction.objectStore('statistics').put(data.statistics);
         }
         
-        transaction.oncomplete = async () => {
-            await updateStatistics();
-            await updateBadge();
-            await doubleBackup();
+        transaction.oncomplete = () => {
+            setTimeout(async () => {
+                try {
+                    await updateStatistics();
+                    await updateBadge();
+                    await doubleBackup();
+                } catch (e) {
+                    console.warn('⚠️ Ошибка после импорта:', e);
+                }
+            }, 0);
             resolve();
         };
         
@@ -728,7 +853,7 @@ async function importDataInternal(data) {
 }
 
 // ============================================================
-// === ПОЛУЧЕНИЕ ПУТИ ДЛЯ СКАЧИВАНИЯ ===
+// === СКАЧИВАНИЕ ФОТО ===
 // ============================================================
 
 function getDownloadPath() {
@@ -738,10 +863,6 @@ function getDownloadPath() {
         });
     });
 }
-
-// ============================================================
-// === СКАЧИВАНИЕ ФОТО ===
-// ============================================================
 
 function getDirectImageUrl(url) {
     if (!url) return null;
@@ -1115,6 +1236,9 @@ chrome.runtime.onInstalled.addListener(async (details) => {
         } else {
             await updateStatistics();
         }
+    } else {
+        // Пересчёт статистики при обновлении расширения
+        await updateStatistics();
     }
     
     await updateBadge();

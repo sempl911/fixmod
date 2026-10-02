@@ -55,14 +55,15 @@ async function loadCurrentUserFromStorage() {
     }
 }
 
+// Фильтруем по technician (кто реально работал), а не по current_user (кто открыл).
 function applyUserFilter(orders) {
     if (!filterByUser || !currentUser) {
         return orders;
     }
     
     return orders.filter(order => {
-        if (order.current_user === currentUser) return true;
-        if (!order.current_user && order.technician === currentUser) return true;
+        if (order.technician === currentUser) return true;
+        if (!order.technician && order.current_user === currentUser) return true;
         return false;
     });
 }
@@ -148,19 +149,92 @@ function getGroupMembers(group) {
 }
 
 // ============================================================
-// 2. 👇 РАБОЧАЯ ДАТА ЗАКАЗА (КЛЮЧЕВАЯ ФУНКЦИЯ)
+// 1.5. СОКРАЩЕНИЕ ИМЕНИ УСТРОЙСТВА (Вариант A — только модель)
+// ============================================================
+
+/**
+ * Сокращает длинное название устройства Fixably до удобочитаемого.
+ * ВАРИАНТ A: возвращает только модель, без памяти и цвета.
+ * 
+ * Примеры:
+ *   "Dell Precision 7530 | i7-8850H | 15.6\" | 32 GB | ..." → "Dell Precision 7530"
+ *   "Samsung Galaxy S23 | 8 GB | 128 GB | Dual-SIM | Phantom Black" → "Samsung Galaxy S23"
+ *   "iPhone 13 128 Go - Bleu - Débloqué" → "iPhone 13"
+ *   "iPhone 13 Mini | 512 GB | Dual-SIM | green" → "iPhone 13 Mini"
+ *   "apple-iphone-13-pro" → "iPhone 13 Pro"
+ *   "Apple MacBook Pro 2019 | 16\" | i7-9750H | ..." → "Apple MacBook Pro 2019"
+ */
+function shortDeviceName(fullName) {
+    if (!fullName) return '—';
+    
+    let name = String(fullName).trim();
+    
+    // Убираем многоточие в конце
+    name = name.replace(/\.\.\.+$/, '').trim();
+    
+    // === Случай 1: slug вида "apple-iphone-13-pro" ===
+    if (/^[a-z0-9-]+$/.test(name) && name.includes('-')) {
+        return name
+            .split('-')
+            .map(w => {
+                if (['of', 'the', 'and', 'with'].includes(w)) return w;
+                // "iphone" → "iPhone", "ipad" → "iPad", "imac" → "iMac", "ipod" → "iPod"
+                if (/^i[a-z]+$/.test(w) && w.length > 1) {
+                    return 'i' + w.charAt(1).toUpperCase() + w.slice(2);
+                }
+                return w.charAt(0).toUpperCase() + w.slice(1);
+            })
+            .join(' ');
+    }
+    
+    // === Случай 2: разделитель "|" — ноутбуки и телефоны ===
+    if (name.includes('|')) {
+        const parts = name.split('|').map(p => p.trim());
+        let base = parts[0];
+        
+        // Если в base есть "128 Go" / "128GB" / "64 Go" — убираем
+        base = base.replace(/\s*\d+\s*(Go|GB|To|TB)\b/gi, '').trim();
+        
+        // Также убираем цвет, если попал в base (например "iPhone 13 128 Go - Bleu")
+        // Но в случае "|" цвет обычно в отдельных частях после base.
+        
+        return base;
+    }
+    
+    // === Случай 3: разделитель " - " — iPhone с дефисами ===
+    if (name.includes(' - ')) {
+        const parts = name.split(' - ').map(p => p.trim());
+        let base = parts[0];
+        
+        // Убираем "128 Go" / "64 GB" из base
+        base = base.replace(/\s*\d+\s*(Go|GB|To|TB)\b/gi, '').trim();
+        
+        return base;
+    }
+    
+    // === Случай 4: обычное имя — обрезаем по первому разделителю ===
+    name = name.split('|')[0].trim();
+    name = name.replace(/\s*\d+\s*(Go|GB|To|TB)\b/gi, '').trim();
+    
+    // Убираем длинные технические хвосты (CPU/RAM/SSD и т.п.)
+    name = name.replace(/\s+(i\d-\d+\w*|Ryzen\s+\d+\s+\w+|M\d\s+(Pro|Max|Ultra)?).*$/i, '');
+    
+    return name;
+}
+
+// ============================================================
+// 2. РАБОЧАЯ ДАТА ЗАКАЗА
 // ============================================================
 //
 // Приоритет:
-// 1. Самая свежая резолюция (работа выполнена)
-// 2. Самый свежий диагноз (работа в процессе)
+// 1. Самая свежая резолюция
+// 2. Самый свежий диагноз
 // 3. Самое свежее изменение статуса
 // 4. Самое свежее изменение техника
 // 5. last_status_change
-// 6. created_at (крайний случай)
+// 6. created_at
 //
 
-// 👇 Вспомогательная функция: найти САМУЮ СВЕЖУЮ дату в массиве
 function getLatestDate(items) {
     if (!items || items.length === 0) return null;
     
@@ -170,7 +244,6 @@ function getLatestDate(items) {
     items.forEach(item => {
         if (item && item.date) {
             const ts = new Date(item.date).getTime();
-            // Сравниваем timestamp — берём максимум
             if (!isNaN(ts) && ts > latestTimestamp) {
                 latestTimestamp = ts;
                 latestDate = item.date;
@@ -181,40 +254,32 @@ function getLatestDate(items) {
     return latestDate;
 }
 
-// 👇 Рабочая дата заказа — берём САМУЮ СВЕЖУЮ из всех доступных
 function getOrderWorkDate(order) {
     if (!order) return null;
     
-    // 1. Резолюция — самая свежая (приоритет: работа выполнена)
     const latestResolution = getLatestDate(order.resolutions);
     if (latestResolution) return latestResolution;
     
-    // 2. Диагноз — самый свежий (работа в процессе)
     const latestDiagnosis = getLatestDate(order.diagnoses);
     if (latestDiagnosis) return latestDiagnosis;
     
-    // 3. Изменение статуса — самое свежее
     const latestStatusChange = getLatestDate(order.status_changes);
     if (latestStatusChange) return latestStatusChange;
     
-    // 4. Изменение техника — самое свежее
     const latestHandlerChange = getLatestDate(order.handler_changes);
     if (latestHandlerChange) return latestHandlerChange;
     
-    // 5. last_status_change
     if (order.last_status_change) return order.last_status_change;
     
-    // 6. Крайний случай — created_at
     return order.created_at || null;
 }
 
-// Алиас для совместимости со старым кодом
 function getOrderDateForFilter(order) {
     return getOrderWorkDate(order);
 }
 
 // ============================================================
-// 3. ВЫХОДНЫЕ
+// 3. ВЫХОДНЫЕ И КАСТОМНЫЕ ДНИ
 // ============================================================
 
 async function loadHolidays() {
@@ -222,6 +287,7 @@ async function loadHolidays() {
         const result = await chrome.storage.local.get(['fixmod_holidays']);
         if (result.fixmod_holidays && Array.isArray(result.fixmod_holidays)) {
             customHolidays = new Set(result.fixmod_holidays);
+            console.log('📅 Загружено кастомных выходных:', customHolidays.size);
         }
     } catch (e) {
         console.warn('⚠️ Не удалось загрузить выходные:', e);
@@ -238,6 +304,7 @@ async function saveHolidays() {
     }
 }
 
+// Проверяет, является ли день выходным (weekend или кастомный)
 function isDayOff(dateStr) {
     const date = new Date(dateStr + 'T00:00:00');
     const dayOfWeek = date.getDay();
@@ -250,19 +317,45 @@ async function toggleHoliday(dateStr) {
     const date = new Date(dateStr + 'T00:00:00');
     const dayOfWeek = date.getDay();
     
+    // На выходные (сб/вс) кликать нельзя — они и так выходные
     if (dayOfWeek === 0 || dayOfWeek === 6) return;
     
     if (customHolidays.has(dateStr)) {
         customHolidays.delete(dateStr);
+        console.log('📅 Убран выходной:', dateStr);
     } else {
         customHolidays.add(dateStr);
+        console.log('📅 Добавлен выходной:', dateStr);
     }
     
     await saveHolidays();
     renderCalendar();
     
+    // Пересчитываем ВСЁ, потому что метрики зависят от рабочих дней
     updateDailyChart();
     updateStatsCards();
+    updateStatusList();
+    updateStatusChart();
+}
+
+// Возвращает массив дат (YYYY-MM-DD), которые являются рабочими в диапазоне [from, to]
+function getWorkingDaysInRange(fromDate, toDate) {
+    const days = [];
+    const cursor = new Date(fromDate);
+    cursor.setHours(0, 0, 0, 0);
+    
+    const end = new Date(toDate);
+    end.setHours(23, 59, 59, 999);
+    
+    while (cursor <= end) {
+        const dayStr = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
+        if (!isDayOff(dayStr)) {
+            days.push(dayStr);
+        }
+        cursor.setDate(cursor.getDate() + 1);
+    }
+    
+    return days;
 }
 
 // ============================================================
@@ -360,26 +453,18 @@ async function initCalendar() {
 // 5. ФОРМАТИРОВАНИЕ ДАТ
 // ============================================================
 
-function formatDate(dateString) {
-    if (!dateString) return '-';
-    try {
-        const date = new Date(dateString);
-        return date.toLocaleDateString('en-US', {
-            day: '2-digit', month: '2-digit', year: 'numeric'
-        });
-    } catch (e) {
-        return dateString;
-    }
-}
-
+// Формат dd.mm.yyyy без времени
 function formatDateTime(dateString) {
     if (!dateString) return '-';
     try {
         const date = new Date(dateString);
-        return date.toLocaleString('en-US', {
-            day: '2-digit', month: '2-digit', year: 'numeric',
-            hour: '2-digit', minute: '2-digit'
-        });
+        if (isNaN(date.getTime())) return '-';
+        
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = date.getFullYear();
+        
+        return `${day}.${month}.${year}`;
     } catch (e) {
         return dateString;
     }
@@ -726,10 +811,105 @@ function updateStatusChart() {
 }
 
 // ============================================================
-// 12. AVERAGE REPAIRS BY DAY
+// 12. AVERAGE REPAIRS BY DAY + метрики (скользящее окно + календарь)
 // ============================================================
 
+// 👇 Считает метрики "Avg / 30 days", "Avg / 7 days", "Today".
+// Учитывает календарь: выходные (сб/вс) и кастомные дни (больничные/отпуска) исключаются из рабочего времени.
+function updateAverages() {
+    const dateFiltered = applyDateFilter(allOrders);
+    const now = new Date();
+    
+    // Сегодня как YYYY-MM-DD
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    
+    // Конец сегодняшнего дня (чтобы заказы "в будущем" не считались)
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    
+    // ============================================================
+    // AVERAGE за последние 30 дней
+    // ============================================================
+    const thirtyDaysAgo = new Date(now);
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
+    thirtyDaysAgo.setHours(0, 0, 0, 0);
+    
+    // 👇 Используем календарь: считаем только рабочие дни (без выходных и кастомных)
+    const workingDaysMonth = getWorkingDaysInRange(thirtyDaysAgo, todayEnd).length;
+    
+    let totalOrdersMonth = 0;
+    dateFiltered.forEach(order => {
+        const date = getOrderWorkDate(order);
+        if (date) {
+            const orderDate = new Date(date);
+            if (orderDate >= thirtyDaysAgo && orderDate <= todayEnd) {
+                totalOrdersMonth++;
+            }
+        }
+    });
+    
+    const avgMonth = workingDaysMonth > 0 ? (totalOrdersMonth / workingDaysMonth) : 0;
+    
+    // ============================================================
+    // AVERAGE за последние 7 дней
+    // ============================================================
+    const weekAgo = new Date(now);
+    weekAgo.setDate(weekAgo.getDate() - 6);
+    weekAgo.setHours(0, 0, 0, 0);
+    
+    // 👇 Тоже через календарь
+    const workingDaysWeek = getWorkingDaysInRange(weekAgo, todayEnd).length;
+    
+    let totalOrdersWeek = 0;
+    dateFiltered.forEach(order => {
+        const date = getOrderWorkDate(order);
+        if (date) {
+            const orderDate = new Date(date);
+            if (orderDate >= weekAgo && orderDate <= todayEnd) {
+                totalOrdersWeek++;
+            }
+        }
+    });
+    
+    const avgWeek = workingDaysWeek > 0 ? (totalOrdersWeek / workingDaysWeek) : 0;
+    
+    // ============================================================
+    // TODAY
+    // ============================================================
+    let totalToday = 0;
+    dateFiltered.forEach(order => {
+        const date = getOrderWorkDate(order);
+        if (date && date.slice(0, 10) === todayStr) {
+            totalToday++;
+        }
+    });
+    
+    // ============================================================
+    // Обновляем DOM
+    // ============================================================
+    const avgMonthEl = document.getElementById('avg-month');
+    const avgWeekEl = document.getElementById('avg-week');
+    const avgTodayEl = document.getElementById('avg-today');
+    
+    if (avgMonthEl) avgMonthEl.textContent = avgMonth.toFixed(1);
+    if (avgWeekEl) avgWeekEl.textContent = avgWeek.toFixed(1);
+    if (avgTodayEl) avgTodayEl.textContent = totalToday;
+    
+    console.log('📊 Метрики (скользящее окно + календарь):', {
+        'Окно': '30 дней',
+        'Заказов за 30 дней': totalOrdersMonth,
+        'Рабочих дней за 30 дней': workingDaysMonth,
+        'Avg / 30 дней': avgMonth.toFixed(1),
+        'Заказов за 7 дней': totalOrdersWeek,
+        'Рабочих дней за 7 дней': workingDaysWeek,
+        'Avg / 7 дней': avgWeek.toFixed(1),
+        'Сегодня': totalToday
+    });
+}
+
 function updateDailyChart() {
+    // 👇 Сначала обновляем метрики (независимо от Chart.js)
+    updateAverages();
+    
     if (!chartJsAvailable) {
         document.getElementById('dailyChart').style.display = 'none';
         document.getElementById('dailyFallback').style.display = 'flex';
@@ -761,91 +941,6 @@ function updateDailyChart() {
     const sortedDays = Object.keys(dailyData)
         .filter(day => !isDayOff(day))
         .sort();
-    
-    const now = new Date();
-    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    
-    // AVERAGE за месяц
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    
-    let workingDaysMonth = 0;
-    const tempDate = new Date(monthStart);
-    while (tempDate <= todayEnd) {
-        const dayStr = `${tempDate.getFullYear()}-${String(tempDate.getMonth() + 1).padStart(2, '0')}-${String(tempDate.getDate()).padStart(2, '0')}`;
-        if (!isDayOff(dayStr)) {
-            workingDaysMonth++;
-        }
-        tempDate.setDate(tempDate.getDate() + 1);
-    }
-    
-    let totalOrdersMonth = 0;
-    dateFiltered.forEach(order => {
-        const date = getOrderWorkDate(order);
-        if (date) {
-            const orderDate = new Date(date);
-            if (orderDate >= monthStart && orderDate <= now) {
-                totalOrdersMonth++;
-            }
-        }
-    });
-    
-    if (workingDaysMonth === 0) workingDaysMonth = 1;
-    const avgMonth = totalOrdersMonth / workingDaysMonth;
-    
-    // AVERAGE за неделю
-    const weekAgo = new Date(now);
-    weekAgo.setDate(weekAgo.getDate() - 6);
-    weekAgo.setHours(0, 0, 0, 0);
-    
-    let workingDaysWeek = 0;
-    const weekDate = new Date(weekAgo);
-    while (weekDate <= todayEnd) {
-        const dayStr = `${weekDate.getFullYear()}-${String(weekDate.getMonth() + 1).padStart(2, '0')}-${String(weekDate.getDate()).padStart(2, '0')}`;
-        if (!isDayOff(dayStr)) {
-            workingDaysWeek++;
-        }
-        weekDate.setDate(weekDate.getDate() + 1);
-    }
-    
-    let totalOrdersWeek = 0;
-    dateFiltered.forEach(order => {
-        const date = getOrderWorkDate(order);
-        if (date) {
-            const orderDate = new Date(date);
-            if (orderDate >= weekAgo && orderDate <= now) {
-                totalOrdersWeek++;
-            }
-        }
-    });
-    
-    if (workingDaysWeek === 0) workingDaysWeek = 1;
-    const avgWeek = totalOrdersWeek / workingDaysWeek;
-    
-    // TODAY
-    let totalToday = 0;
-    dateFiltered.forEach(order => {
-        const date = getOrderWorkDate(order);
-        if (date && date.slice(0, 10) === todayStr) {
-            totalToday++;
-        }
-    });
-    
-    const avgMonthEl = document.getElementById('avg-month');
-    const avgWeekEl = document.getElementById('avg-week');
-    const avgTodayEl = document.getElementById('avg-today');
-    
-    if (avgMonthEl) avgMonthEl.textContent = avgMonth.toFixed(1);
-    if (avgWeekEl) avgWeekEl.textContent = avgWeek.toFixed(1);
-    if (avgTodayEl) avgTodayEl.textContent = totalToday;
-    
-    console.log('📊 Статистика для', currentUser || 'всех:', {
-        'Моих заказов в месяце': totalOrdersMonth,
-        'Рабочих дней в месяце': workingDaysMonth,
-        'Avg / месяц': avgMonth.toFixed(1),
-        'Avg / неделя': avgWeek.toFixed(1),
-        'Сегодня': totalToday
-    });
     
     if (sortedDays.length === 0) {
         const ctx = document.getElementById('dailyChart').getContext('2d');
@@ -1165,7 +1260,7 @@ function renderTable() {
                         #${order.order_number}
                     </a>
                 </td>
-                <td>${order.device_model || '—'}</td>
+                <td title="${order.device_model || ''}">${shortDeviceName(order.device_model)}</td>
                 <td>
                     <span class="status-badge" style="background:${color}20; color:${color}; padding:2px 10px; border-radius:12px; font-size:11px; font-weight:500; display:inline-block;">
                         ${label}
@@ -1409,6 +1504,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                 filterByUser = true;
                 refreshStats();
             }
+        }
+        // 👇 Если календарь (выходные) изменился в другой вкладке — пересчитываем метрики
+        if (area === 'local' && changes.fixmod_holidays) {
+            const newHolidays = changes.fixmod_holidays.newValue || [];
+            customHolidays = new Set(newHolidays);
+            console.log('📅 Выходные обновлены из другой вкладки:', customHolidays.size);
+            updateDailyChart();
+            updateStatsCards();
         }
     });
     

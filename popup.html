@@ -124,7 +124,6 @@
         }
 
         /* ===== STAT NUMBERS ===== */
-        /* По умолчанию ЧЁРНЫЕ — JS перезапишет через inline style */
         .stat-number {
             font-size: 24px;
             font-weight: 800;
@@ -133,7 +132,6 @@
             line-height: 1.1;
         }
 
-        /* Дефолтные цвета — JS перезапишет */
         .stat-number.purple {
             color: #667eea;
         }
@@ -250,12 +248,12 @@
                 <div class="stat-label">Today</div>
             </div>
             <div class="stat-card" id="stats-btn" title="Open statistics">
-                <div class="stat-number green" id="repaired-count">0</div>
-                <div class="stat-label">Repaired</div>
+                <div class="stat-number green" id="repaired-today-count">0</div>
+                <div class="stat-label">Ready today</div>
             </div>
             <div class="stat-card" id="stats-btn" title="Open statistics">
-                <div class="stat-number" id="total-count">0</div>
-                <div class="stat-label">Total</div>
+                <div class="stat-number" id="avg-30d">0.0</div>
+                <div class="stat-label">Avg / 30d</div>
             </div>
         </div>
 
@@ -268,7 +266,7 @@
             <span class="highlight" id="orders-count">0 orders</span>
         </div>
 
-        <div class="version-bottom" id="version-info">FixMod v1.0.3</div>
+        <div class="version-bottom" id="version-info">FixMod v1.0.8</div>
     </div>
 
     <script src="popup.js"></script>
