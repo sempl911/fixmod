@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "FixMod",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Fixably Widget for Repair Management",
   
   "permissions": [

@@ -152,33 +152,18 @@ function getGroupMembers(group) {
 // 1.5. СОКРАЩЕНИЕ ИМЕНИ УСТРОЙСТВА (Вариант A — только модель)
 // ============================================================
 
-/**
- * Сокращает длинное название устройства Fixably до удобочитаемого.
- * ВАРИАНТ A: возвращает только модель, без памяти и цвета.
- * 
- * Примеры:
- *   "Dell Precision 7530 | i7-8850H | 15.6\" | 32 GB | ..." → "Dell Precision 7530"
- *   "Samsung Galaxy S23 | 8 GB | 128 GB | Dual-SIM | Phantom Black" → "Samsung Galaxy S23"
- *   "iPhone 13 128 Go - Bleu - Débloqué" → "iPhone 13"
- *   "iPhone 13 Mini | 512 GB | Dual-SIM | green" → "iPhone 13 Mini"
- *   "apple-iphone-13-pro" → "iPhone 13 Pro"
- *   "Apple MacBook Pro 2019 | 16\" | i7-9750H | ..." → "Apple MacBook Pro 2019"
- */
 function shortDeviceName(fullName) {
     if (!fullName) return '—';
     
     let name = String(fullName).trim();
-    
-    // Убираем многоточие в конце
     name = name.replace(/\.\.\.+$/, '').trim();
     
-    // === Случай 1: slug вида "apple-iphone-13-pro" ===
+    // Случай 1: slug вида "apple-iphone-13-pro"
     if (/^[a-z0-9-]+$/.test(name) && name.includes('-')) {
         return name
             .split('-')
             .map(w => {
                 if (['of', 'the', 'and', 'with'].includes(w)) return w;
-                // "iphone" → "iPhone", "ipad" → "iPad", "imac" → "iMac", "ipod" → "iPod"
                 if (/^i[a-z]+$/.test(w) && w.length > 1) {
                     return 'i' + w.charAt(1).toUpperCase() + w.slice(2);
                 }
@@ -187,52 +172,41 @@ function shortDeviceName(fullName) {
             .join(' ');
     }
     
-    // === Случай 2: разделитель "|" — ноутбуки и телефоны ===
+    // Случай 2: разделитель "|" — ноутбуки и телефоны
     if (name.includes('|')) {
         const parts = name.split('|').map(p => p.trim());
         let base = parts[0];
-        
-        // Если в base есть "128 Go" / "128GB" / "64 Go" — убираем
         base = base.replace(/\s*\d+\s*(Go|GB|To|TB)\b/gi, '').trim();
-        
-        // Также убираем цвет, если попал в base (например "iPhone 13 128 Go - Bleu")
-        // Но в случае "|" цвет обычно в отдельных частях после base.
-        
         return base;
     }
     
-    // === Случай 3: разделитель " - " — iPhone с дефисами ===
+    // Случай 3: разделитель " - "
     if (name.includes(' - ')) {
         const parts = name.split(' - ').map(p => p.trim());
         let base = parts[0];
-        
-        // Убираем "128 Go" / "64 GB" из base
         base = base.replace(/\s*\d+\s*(Go|GB|To|TB)\b/gi, '').trim();
-        
         return base;
     }
     
-    // === Случай 4: обычное имя — обрезаем по первому разделителю ===
+    // Случай 4: обычное имя
     name = name.split('|')[0].trim();
     name = name.replace(/\s*\d+\s*(Go|GB|To|TB)\b/gi, '').trim();
-    
-    // Убираем длинные технические хвосты (CPU/RAM/SSD и т.п.)
     name = name.replace(/\s+(i\d-\d+\w*|Ryzen\s+\d+\s+\w+|M\d\s+(Pro|Max|Ultra)?).*$/i, '');
     
     return name;
 }
 
 // ============================================================
-// 2. РАБОЧАЯ ДАТА ЗАКАЗА
+// 2. РАБОЧАЯ ДАТА ЗАКАЗА (та же логика, что в background.js)
 // ============================================================
 //
-// Приоритет:
-// 1. Самая свежая резолюция
-// 2. Самый свежий диагноз
-// 3. Самое свежее изменение статуса
-// 4. Самое свежее изменение техника
-// 5. last_status_change
-// 6. created_at
+// Логика:
+// 1. Если у заказа ЕСТЬ резолюция — заказ считается ЗАКРЫТЫМ.
+//    Диагноз в этом случае ИГНОРИРУЕТСЯ полностью.
+//    a) Берём самую свежую резолюцию с валидной датой
+//    b) Если даты нет → updated_at (день закрытия)
+// 2. Если резолюции НЕТ → самый свежий диагноз.
+// 3. Fallback: статус → handler → last_status_change → updated_at → created_at
 //
 
 function getLatestDate(items) {
@@ -242,12 +216,22 @@ function getLatestDate(items) {
     let latestTimestamp = 0;
     
     items.forEach(item => {
-        if (item && item.date) {
-            const ts = new Date(item.date).getTime();
-            if (!isNaN(ts) && ts > latestTimestamp) {
-                latestTimestamp = ts;
-                latestDate = item.date;
-            }
+        if (!item) return;
+        
+        const rawDate = item.date 
+                     || item.created_at 
+                     || item.updated_at 
+                     || item.timestamp 
+                     || item.finished_at;
+        
+        if (!rawDate) return;
+        
+        const ts = new Date(rawDate).getTime();
+        if (isNaN(ts) || ts <= 0) return;
+        
+        if (ts > latestTimestamp) {
+            latestTimestamp = ts;
+            latestDate = rawDate;
         }
     });
     
@@ -257,19 +241,36 @@ function getLatestDate(items) {
 function getOrderWorkDate(order) {
     if (!order) return null;
     
-    const latestResolution = getLatestDate(order.resolutions);
-    if (latestResolution) return latestResolution;
+    const REPAIRED_STATUSES = ['ready', 'shipped', 'picked_up', 'pickup', 'waiting_shipping'];
+    const isRepaired = REPAIRED_STATUSES.includes(order.status_code);
     
+    // 1. Резолюция — если она есть, заказ считается ЗАКРЫТЫМ
+    if (order.resolutions && order.resolutions.length > 0) {
+        const latestResolution = getLatestDate(order.resolutions);
+        if (latestResolution) return latestResolution;
+        
+        // Резолюция есть, но дата null → updated_at
+        if (order.updated_at) return order.updated_at;
+        
+        if (order.last_status_change) return order.last_status_change;
+        return order.created_at || null;
+    }
+    
+    // 2. Резолюции нет → самый свежий диагноз
     const latestDiagnosis = getLatestDate(order.diagnoses);
     if (latestDiagnosis) return latestDiagnosis;
     
+    // 3. Изменение статуса
     const latestStatusChange = getLatestDate(order.status_changes);
     if (latestStatusChange) return latestStatusChange;
     
+    // 4. Изменение техника
     const latestHandlerChange = getLatestDate(order.handler_changes);
     if (latestHandlerChange) return latestHandlerChange;
     
+    // 5. Fallback
     if (order.last_status_change) return order.last_status_change;
+    if (order.updated_at) return order.updated_at;
     
     return order.created_at || null;
 }
@@ -304,7 +305,6 @@ async function saveHolidays() {
     }
 }
 
-// Проверяет, является ли день выходным (weekend или кастомный)
 function isDayOff(dateStr) {
     const date = new Date(dateStr + 'T00:00:00');
     const dayOfWeek = date.getDay();
@@ -317,7 +317,6 @@ async function toggleHoliday(dateStr) {
     const date = new Date(dateStr + 'T00:00:00');
     const dayOfWeek = date.getDay();
     
-    // На выходные (сб/вс) кликать нельзя — они и так выходные
     if (dayOfWeek === 0 || dayOfWeek === 6) return;
     
     if (customHolidays.has(dateStr)) {
@@ -331,14 +330,12 @@ async function toggleHoliday(dateStr) {
     await saveHolidays();
     renderCalendar();
     
-    // Пересчитываем ВСЁ, потому что метрики зависят от рабочих дней
     updateDailyChart();
     updateStatsCards();
     updateStatusList();
     updateStatusChart();
 }
 
-// Возвращает массив дат (YYYY-MM-DD), которые являются рабочими в диапазоне [from, to]
 function getWorkingDaysInRange(fromDate, toDate) {
     const days = [];
     const cursor = new Date(fromDate);
@@ -453,7 +450,6 @@ async function initCalendar() {
 // 5. ФОРМАТИРОВАНИЕ ДАТ
 // ============================================================
 
-// Формат dd.mm.yyyy без времени
 function formatDateTime(dateString) {
     if (!dateString) return '-';
     try {
@@ -811,29 +807,21 @@ function updateStatusChart() {
 }
 
 // ============================================================
-// 12. AVERAGE REPAIRS BY DAY + метрики (скользящее окно + календарь)
+// 12. AVERAGE REPAIRS BY DAY + метрики
 // ============================================================
 
-// 👇 Считает метрики "Avg / 30 days", "Avg / 7 days", "Today".
-// Учитывает календарь: выходные (сб/вс) и кастомные дни (больничные/отпуска) исключаются из рабочего времени.
 function updateAverages() {
     const dateFiltered = applyDateFilter(allOrders);
     const now = new Date();
     
-    // Сегодня как YYYY-MM-DD
     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    
-    // Конец сегодняшнего дня (чтобы заказы "в будущем" не считались)
     const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
     
-    // ============================================================
     // AVERAGE за последние 30 дней
-    // ============================================================
     const thirtyDaysAgo = new Date(now);
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
     thirtyDaysAgo.setHours(0, 0, 0, 0);
     
-    // 👇 Используем календарь: считаем только рабочие дни (без выходных и кастомных)
     const workingDaysMonth = getWorkingDaysInRange(thirtyDaysAgo, todayEnd).length;
     
     let totalOrdersMonth = 0;
@@ -849,14 +837,11 @@ function updateAverages() {
     
     const avgMonth = workingDaysMonth > 0 ? (totalOrdersMonth / workingDaysMonth) : 0;
     
-    // ============================================================
     // AVERAGE за последние 7 дней
-    // ============================================================
     const weekAgo = new Date(now);
     weekAgo.setDate(weekAgo.getDate() - 6);
     weekAgo.setHours(0, 0, 0, 0);
     
-    // 👇 Тоже через календарь
     const workingDaysWeek = getWorkingDaysInRange(weekAgo, todayEnd).length;
     
     let totalOrdersWeek = 0;
@@ -872,9 +857,7 @@ function updateAverages() {
     
     const avgWeek = workingDaysWeek > 0 ? (totalOrdersWeek / workingDaysWeek) : 0;
     
-    // ============================================================
     // TODAY
-    // ============================================================
     let totalToday = 0;
     dateFiltered.forEach(order => {
         const date = getOrderWorkDate(order);
@@ -883,9 +866,6 @@ function updateAverages() {
         }
     });
     
-    // ============================================================
-    // Обновляем DOM
-    // ============================================================
     const avgMonthEl = document.getElementById('avg-month');
     const avgWeekEl = document.getElementById('avg-week');
     const avgTodayEl = document.getElementById('avg-today');
@@ -907,7 +887,6 @@ function updateAverages() {
 }
 
 function updateDailyChart() {
-    // 👇 Сначала обновляем метрики (независимо от Chart.js)
     updateAverages();
     
     if (!chartJsAvailable) {
@@ -1505,7 +1484,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 refreshStats();
             }
         }
-        // 👇 Если календарь (выходные) изменился в другой вкладке — пересчитываем метрики
         if (area === 'local' && changes.fixmod_holidays) {
             const newHolidays = changes.fixmod_holidays.newValue || [];
             customHolidays = new Set(newHolidays);

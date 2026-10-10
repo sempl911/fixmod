@@ -366,18 +366,85 @@ function getIMEI() {
 }
 
 // ============================================================
-// === ПАРСИНГ ДАТЫ ===
+// === ПАРСИНГ ДАТЫ (РАСШИРЕННЫЙ) ===
 // ============================================================
+//
+// Поддерживает:
+//  - "Monday 7 September 2026" (абсолютная — точная)
+//  - "just now"                 → сейчас
+//  - "5 minutes ago"            → сейчас - 5 мин
+//  - "2 hours ago"              → сейчас - 2 часа
+//  - "14 days ago"              → сейчас - 14 дней
+//  - "6 months ago"             → сейчас - 6 месяцев
+//  - "Today at 14:30"           → сегодня 14:30
+//  - "Yesterday at 09:15"       → вчера 09:15
+//  - "13:00"                    → сегодня 13:00
+//
 
 function parseDateFromText(text) {
-    // "Monday 7 September 2026"
-    const dateMatch = text.match(/(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+(\d{1,2})\s+(\w+)\s+(\d{4})/i);
-    if (dateMatch) {
-        const day = parseInt(dateMatch[2]);
-        const month = getMonthNumber(dateMatch[3]);
-        const year = parseInt(dateMatch[4]);
-        return new Date(year, month, day);
+    if (!text) return null;
+    const str = String(text);
+    
+    // 1. "just now"
+    if (/\bjust\s+now\b/i.test(str)) {
+        return new Date();
     }
+    
+    // 2. "N seconds/minutes/hours/days/weeks/months/years ago"
+    const relMatch = str.match(/(\d+)\s+(second|minute|hour|day|week|month|year)s?\s+ago/i);
+    if (relMatch) {
+        const amount = parseInt(relMatch[1], 10);
+        const unit = relMatch[2].toLowerCase();
+        const d = new Date();
+        switch (unit) {
+            case 'second': d.setSeconds(d.getSeconds() - amount); break;
+            case 'minute': d.setMinutes(d.getMinutes() - amount); break;
+            case 'hour':   d.setHours(d.getHours() - amount); break;
+            case 'day':    d.setDate(d.getDate() - amount); break;
+            case 'week':   d.setDate(d.getDate() - amount * 7); break;
+            case 'month':  d.setMonth(d.getMonth() - amount); break;
+            case 'year':   d.setFullYear(d.getFullYear() - amount); break;
+        }
+        return d;
+    }
+    
+    // 3. "Today at HH:MM" / "Today"
+    if (/\btoday\b/i.test(str)) {
+        const d = new Date();
+        const t = str.match(/(\d{1,2}):(\d{2})/);
+        if (t) d.setHours(parseInt(t[1], 10), parseInt(t[2], 10), 0, 0);
+        else d.setHours(12, 0, 0, 0);
+        return d;
+    }
+    
+    // 4. "Yesterday at HH:MM" / "Yesterday"
+    if (/\byesterday\b/i.test(str)) {
+        const d = new Date();
+        d.setDate(d.getDate() - 1);
+        const t = str.match(/(\d{1,2}):(\d{2})/);
+        if (t) d.setHours(parseInt(t[1], 10), parseInt(t[2], 10), 0, 0);
+        else d.setHours(12, 0, 0, 0);
+        return d;
+    }
+    
+    // 5. "Monday 7 September 2026" (абсолютная)
+    const absMatch = str.match(/(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+(\d{1,2})\s+(\w+)\s+(\d{4})/i);
+    if (absMatch) {
+        const day = parseInt(absMatch[2], 10);
+        const month = getMonthNumber(absMatch[3]);
+        const year = parseInt(absMatch[4], 10);
+        const d = new Date(year, month, day);
+        if (!isNaN(d.getTime())) return d;
+    }
+    
+    // 6. "13:00" — только время
+    const timeOnly = str.match(/^(\d{1,2}):(\d{2})$/);
+    if (timeOnly) {
+        const d = new Date();
+        d.setHours(parseInt(timeOnly[1], 10), parseInt(timeOnly[2], 10), 0, 0);
+        return d;
+    }
+    
     return null;
 }
 
@@ -417,7 +484,6 @@ function parseTimeText(timeText) {
     } else if (meridiem === 'AM' && hours === 12) {
         hours = 0;
     } else if (!meridiem && hours < 6) {
-        // Старый формат без AM/PM
         hours += 12;
     }
     
@@ -513,7 +579,7 @@ function getCleanText(el) {
 }
 
 // ============================================================
-// === ТАЙМЛАЙН (С ФИКСОМ ?no_events) ===
+// === ТАЙМЛАЙН (С ФИКСАМИ ?no_events и относительной датой) ===
 // ============================================================
 
 async function getTimelineData() {
@@ -533,8 +599,7 @@ async function getTimelineData() {
         return null;
     }
 
-    // 👇 ФИКС: убираем ?no_events — иначе Fixably отдаёт урезанный таймлайн,
-    // у которого у некоторых резолюций нет даты (date: null).
+    // 👇 ФИКС: убираем ?no_events — иначе Fixably отдаёт урезанный таймлайн
     const originalUrl = url;
     url = url.replace(/([?&])no_events(&|$)/, '$1').replace(/[?&]$/, '');
     if (originalUrl !== url) {
@@ -570,15 +635,31 @@ async function getTimelineData() {
             const timeEl = panel.querySelector('.timeline-time');
             const timeText = timeEl ? timeEl.textContent.trim() : null;
 
+            // 👇 НОВЫЙ ПОРЯДОК: сначала АБСОЛЮТНАЯ дата (точная),
+            // потом ОТНОСИТЕЛЬНАЯ из title (для свежих событий)
             let eventDate = null;
+            
+            // 1. Абсолютная дата из текста панели ("Monday 7 September 2026")
             if (fullText) {
                 eventDate = parseDateFromText(fullText);
+            }
+            
+            // 2. Если абсолютной нет — берём из title у <small class="text-muted">
+            //    Fixably пишет "5 minutes ago" / "14 days ago" в title
+            if (!eventDate) {
+                const dateTitleEl = panel.querySelector('small.text-muted[title]');
+                if (dateTitleEl) {
+                    const titleText = dateTitleEl.getAttribute('title') || '';
+                    eventDate = parseDateFromText(titleText);
+                    if (eventDate) {
+                        console.log('📅 Дата из title:', titleText, '→', eventDate.toISOString());
+                    }
+                }
             }
 
             let fullDate = null;
             if (eventDate) {
                 if (timeText) {
-                    // Корректный парсинг AM/PM
                     const parsedTime = parseTimeText(timeText);
                     if (parsedTime) {
                         eventDate.setHours(parsedTime.hours, parsedTime.minutes, 0, 0);
@@ -817,8 +898,7 @@ async function collectOrderData() {
         data.technician = technician;
     }
 
-    // 👇 ФИКС: current_user = техник заказа, а не тот, кто открыл страницу.
-    // Это гарантирует, что если ты открыл чужой заказ — он НЕ попадёт в твою статистику.
+    // 👇 current_user = техник заказа
     const loggedInUser = currentUser || getCurrentUser();
     const orderTechnician = technician;
 
@@ -865,6 +945,7 @@ async function collectOrderData() {
         data.resolutions = timelineData.resolutions || [];
         
         // 👇 ФИКС: берём САМУЮ СВЕЖУЮ резолюцию по дате (а не последнюю в массиве)
+        // Учитываем: если у резолюции нет даты, но она последняя в массиве — берём её
         if (data.resolutions.length > 0) {
             const withDate = data.resolutions.filter(r => r && r.date);
             
@@ -872,6 +953,7 @@ async function collectOrderData() {
                 withDate.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
                 data.resolution = withDate[0].text;
             } else {
+                // Все без даты — берём последнюю (Fixably кладёт самую свежую в конец)
                 data.resolution = data.resolutions[data.resolutions.length - 1].text;
             }
         }
@@ -950,7 +1032,7 @@ function shouldSaveData(currentData) {
         return false;
     }
 
-    // 👇 ФИКС: если current_user не совпадает с technician — сохраняем (миграция старых записей)
+    // 👇 ФИКС: если current_user не совпадает с technician — сохраняем
     if (currentData.technician && currentData.current_user !== currentData.technician) {
         console.log('👤 current_user не совпадает с technician → сохраняем');
         return true;

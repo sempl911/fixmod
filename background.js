@@ -52,7 +52,12 @@ async function getDB() {
 // ============================================================
 // === ПРОВЕРКА: СТОИТ ЛИ ОБНОВЛЯТЬ МАССИВ ===
 // ============================================================
-
+//
+// Возвращает true, если:
+//   • новых элементов больше, чем старых, ИЛИ
+//   • количество совпадает, но раньше были записи без date, а теперь с date, ИЛИ
+//   • текст элемента изменился (например, дата обновилась)
+//
 function shouldUpdateArray(existingArr, newArr) {
     const oldArr = existingArr || [];
     const newList = newArr || [];
@@ -65,12 +70,23 @@ function shouldUpdateArray(existingArr, newArr) {
         return false;
     }
     
-    const oldHasEmptyDates = oldArr.some(item => !item || !item.date);
-    const newHasAllDates = newList.every(item => item && item.date);
-    
-    if (oldHasEmptyDates && newHasAllDates) {
-        console.log('🔧 Апгрейд: даты появились (было null → стало есть)');
-        return true;
+    // Равное количество — проверяем улучшения по каждому элементу
+    for (let i = 0; i < newList.length; i++) {
+        const oldItem = oldArr[i];
+        const newItem = newList[i];
+        
+        if (!oldItem || !newItem) continue;
+        
+        // 👇 У старого нет даты, у нового есть → обновляем
+        if (!oldItem.date && newItem.date) {
+            console.log('🔧 Апгрейд: дата появилась (было null → стало есть)');
+            return true;
+        }
+        
+        // Текст изменился — обновляем
+        if (oldItem.text !== newItem.text) {
+            return true;
+        }
     }
     
     return false;
@@ -203,7 +219,6 @@ async function saveOrderToDB(orderData) {
             }
             
             transaction.oncomplete = () => {
-                // Статистика и бейдж — ВНЕ транзакции, отложенно
                 setTimeout(async () => {
                     try {
                         await updateStatistics();
@@ -224,8 +239,17 @@ async function saveOrderToDB(orderData) {
 }
 
 // ============================================================
-// === РАБОЧАЯ ДАТА ЗАКАЗА ===
+// === РАБОЧАЯ ДАТА ЗАКАЗА (КЛЮЧЕВАЯ ФУНКЦИЯ) ===
 // ============================================================
+//
+// Логика:
+// 1. Если у заказа ЕСТЬ резолюция — заказ считается ЗАКРЫТЫМ.
+//    Диагноз в этом случае ИГНОРИРУЕТСЯ полностью.
+//    a) Берём самую свежую резолюцию с валидной датой
+//    b) Если даты нет → updated_at (день закрытия)
+// 2. Если резолюции НЕТ → самый свежий диагноз.
+// 3. Fallback: статус → handler → last_status_change → updated_at → created_at
+//
 
 function getLatestDate(items) {
     if (!items || items.length === 0) return null;
@@ -259,23 +283,42 @@ function getLatestDate(items) {
 function getOrderWorkDate(order) {
     if (!order) return null;
     
+    const REPAIRED_STATUSES = ['ready', 'shipped', 'picked_up', 'pickup', 'waiting_shipping'];
+    const isRepaired = REPAIRED_STATUSES.includes(order.status_code);
+    
+    // ============================================================
+    // 1. РЕЗОЛЮЦИЯ — если она есть, заказ считается ЗАКРЫТЫМ.
+    //    Диагноз в этом случае ИГНОРИРУЕТСЯ полностью.
+    // ============================================================
     if (order.resolutions && order.resolutions.length > 0) {
+        // 1a. Самая свежая резолюция с валидной датой
         const latestResolution = getLatestDate(order.resolutions);
         if (latestResolution) return latestResolution;
-        if (order.last_status_change) return order.last_status_change;
+        
+        // 1b. Резолюция есть, но дата null → updated_at
+        //     (у Fixably это день последнего изменения заказа)
         if (order.updated_at) return order.updated_at;
+        
+        // 1c. Совсем нет данных
+        if (order.last_status_change) return order.last_status_change;
         return order.created_at || null;
     }
     
+    // ============================================================
+    // 2. Резолюции НЕТ → самый свежий диагноз
+    // ============================================================
     const latestDiagnosis = getLatestDate(order.diagnoses);
     if (latestDiagnosis) return latestDiagnosis;
     
+    // 3. Изменение статуса
     const latestStatusChange = getLatestDate(order.status_changes);
     if (latestStatusChange) return latestStatusChange;
     
+    // 4. Изменение техника
     const latestHandlerChange = getLatestDate(order.handler_changes);
     if (latestHandlerChange) return latestHandlerChange;
     
+    // 5. Fallback
     if (order.last_status_change) return order.last_status_change;
     if (order.updated_at) return order.updated_at;
     
@@ -289,7 +332,6 @@ function getOrderWorkDate(order) {
 async function updateStatistics() {
     const database = await getDB();
     
-    // 👇 Читаем календарь ЗАРАНЕЕ, до открытия транзакции
     let customHolidays = new Set();
     try {
         const storageResult = await chrome.storage.local.get(['fixmod_holidays']);
@@ -1237,7 +1279,6 @@ chrome.runtime.onInstalled.addListener(async (details) => {
             await updateStatistics();
         }
     } else {
-        // Пересчёт статистики при обновлении расширения
         await updateStatistics();
     }
     
