@@ -116,7 +116,8 @@ async function saveCustomPhrase(fieldType, text) {
         
         if (existsInEdited) return;
         
-        edited[fieldType].unshift({
+        // 👇 push в конец — новая фраза не поднимается наверх
+        edited[fieldType].push({
             text: trimmed,
             value: trimmed,
             custom: true,
@@ -126,9 +127,22 @@ async function saveCustomPhrase(fieldType, text) {
         await chrome.storage.local.set({ fixmod_suggestions_edited: edited });
         SUGGESTIONS[fieldType] = edited[fieldType];
         
-        console.log(`💾 Автосохранено: "${trimmed}"`);
+        console.log(`💾 Автосохранено (в конец): "${trimmed}"`);
     } catch (e) {}
 }
+
+// ============================================================
+// === СОРТИРОВКА: только по частоте использования ===
+// ============================================================
+//
+// Логика:
+//   1. Сначала фразы с бОльшим usage
+//   2. При равенстве usage — по порядку добавления (стабильно)
+//
+// isCustom НЕ влияет на сортировку в выпадающем списке.
+// Кастомные фразы остаются в своих позициях, пока их не начнут
+// использовать чаще — тогда они поднимаются естественным образом.
+//
 
 function getSortedSuggestions(fieldType) {
     const items = SUGGESTIONS[fieldType] || [];
@@ -143,15 +157,11 @@ function getSortedSuggestions(fieldType) {
             text,
             value,
             usage,
-            originalIndex,
-            isCustom: item.custom === true
+            originalIndex
         };
     });
     
     withMeta.sort((a, b) => {
-        if (a.isCustom !== b.isCustom) {
-            return b.isCustom ? 1 : -1;
-        }
         if (b.usage !== a.usage) {
             return b.usage - a.usage;
         }
@@ -393,7 +403,7 @@ function showSuggestions(fieldType, value) {
 }
 
 // ============================================================
-// === РЕНДЕР ===
+// === РЕНДЕР (без звезды) ===
 // ============================================================
 
 function renderSuggestions(suggestions) {
@@ -407,7 +417,6 @@ function renderSuggestions(suggestions) {
         const isSelected = index === selectedSuggestionIndex;
         const { text } = getItemTextAndValue(item);
         const usage = item.usage || 0;
-        const custom = item.isCustom;
         
         const usageBadge = usage > 0 
             ? `<span style="
@@ -423,8 +432,6 @@ function renderSuggestions(suggestions) {
                 text-align: center;
               ">${usage}</span>`
             : '';
-        
-        const star = custom ? `<span style="color: #f59e0b; font-size: 12px; flex-shrink: 0;">★</span>` : '';
         
         const itemBg = isSelected 
             ? hexToRgba(theme.c1, isDark ? 0.4 : 0.3)
@@ -450,7 +457,6 @@ function renderSuggestions(suggestions) {
                 pointer-events: auto;
                 transition: background 0.15s;
             ">
-                ${star}
                 <span style="flex: 1; overflow: hidden; text-overflow: ellipsis;">${text}</span>
                 ${usageBadge}
             </div>
